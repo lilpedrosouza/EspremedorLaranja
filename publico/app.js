@@ -26,6 +26,7 @@ const estado = {
   produtos: [],
   carrinho: new Map(),
   pedido: null,
+  pix: null,
   categoria: 'Todos',
   busca: '',
   buscaCatalogo: '',
@@ -298,6 +299,97 @@ function desenharPainel() {
     recado.classList.add('escondido');
     $('#botao-cancelar').classList.add('escondido');
   }
+
+  desenharPagamento();
+}
+
+/**
+ * O bloco do Pix só aparece com pedido enviado — antes disso não há valor a
+ * pagar. Se o carrinho tiver mudanças ainda não enviadas, o QR some: ele carrega
+ * o valor do pedido que está no servidor, e mostrar o antigo faria pagar errado.
+ */
+function desenharPagamento() {
+  const bloco = $('#bloco-pagamento');
+  const pedido = estado.pedido;
+
+  if (!pedido) {
+    bloco.classList.add('escondido');
+    return;
+  }
+
+  const totalEnviado = pedido.itens.reduce((s, i) => s + (Number(i.preco) || 0) * i.quantidade, 0);
+  const mudou = carrinhoDiferenteDoPedido();
+
+  if (!estado.pix) {
+    bloco.classList.remove('escondido');
+    $('#qr-pix').innerHTML = '';
+    $('#pix-nome').textContent = '—';
+    $('#pix-chave').textContent = 'Pix ainda não configurado';
+    $('#pix-valor').textContent = dinheiro(totalEnviado);
+    $('#botao-copiar-pix').classList.add('escondido');
+    $('#botao-paguei').classList.add('escondido');
+    mostrarAviso('O comprador ainda não cadastrou a chave Pix. Combine o pagamento com ele.', 'neutro');
+    return;
+  }
+
+  bloco.classList.remove('escondido');
+  $('#botao-copiar-pix').classList.toggle('escondido', mudou);
+  $('#qr-pix').innerHTML = mudou ? '' : estado.pix.qrcode;
+  $('#pix-nome').textContent = estado.pix.nome;
+  $('#pix-chave').textContent = formatarChavePix(estado.pix.chave);
+  $('#pix-valor').textContent = dinheiro(estado.pix.valor);
+
+  const botao = $('#botao-paguei');
+  botao.classList.toggle('escondido', mudou);
+
+  if (mudou) {
+    mostrarAviso('Você mexeu no pedido. Envie de novo para o código do Pix valer o novo valor.', 'atencao');
+    return;
+  }
+
+  if (pedido.confirmadoEm) {
+    botao.disabled = true;
+    botao.textContent = 'Pagamento confirmado';
+    mostrarAviso(`O comprador confirmou seu pagamento em ${quandoFoi(pedido.confirmadoEm)}.`, 'bom');
+  } else if (pedido.pagoEm) {
+    botao.disabled = false;
+    botao.textContent = 'Avisei que paguei — desfazer';
+    mostrarAviso(`Você avisou que pagou em ${quandoFoi(pedido.pagoEm)}. Falta o comprador confirmar.`, 'neutro');
+  } else {
+    botao.disabled = false;
+    botao.textContent = 'Já paguei';
+    esconderAviso();
+  }
+}
+
+function mostrarAviso(texto, tipo) {
+  const aviso = $('#aviso-pagamento');
+  aviso.textContent = texto;
+  aviso.className = `aviso-pagamento ${tipo}`;
+}
+
+function esconderAviso() {
+  $('#aviso-pagamento').className = 'aviso-pagamento escondido';
+}
+
+/** O que está no carrinho agora bate com o pedido já enviado? */
+function carrinhoDiferenteDoPedido() {
+  if (!estado.pedido) return false;
+  const enviado = new Map(estado.pedido.itens.map((i) => [i.produtoId, i.quantidade]));
+  if (enviado.size !== estado.carrinho.size) return true;
+  for (const [id, quantidade] of estado.carrinho) {
+    if (enviado.get(id) !== quantidade) return true;
+  }
+  return false;
+}
+
+/** 00000000000 -> 000.000.000-00, só para a chave ficar legível na tela. */
+function formatarChavePix(chave) {
+  const digitos = String(chave).replace(/\D/g, '');
+  if (digitos.length === 11 && !String(chave).includes('@')) {
+    return digitos.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+  }
+  return chave;
 }
 
 function desenharLoja() {
@@ -322,8 +414,10 @@ async function enviarPedido() {
   try {
     const resposta = await api('/api/meu-pedido', { method: 'PUT', corpo: { itens } });
     estado.pedido = resposta.pedido;
+    estado.pix = resposta.pix;
     desenharPainel();
-    torradeira('Pedido enviado pro comprador.');
+    torradeira('Pedido enviado. Agora é só pagar.');
+    $('#bloco-pagamento').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (falha) {
     torradeira(falha.message, true);
   } finally {
@@ -336,6 +430,7 @@ async function cancelarPedido() {
   try {
     await api('/api/meu-pedido', { method: 'DELETE' });
     estado.pedido = null;
+    estado.pix = null;
     estado.carrinho.clear();
     desenharLoja();
     torradeira('Pedido cancelado.');
@@ -371,7 +466,9 @@ function desenharFechamento({ rodada, resumo }) {
     ['Pessoas', resumo.pessoas.length],
     ['Caixas', resumo.totalCaixas],
     ['Cápsulas', resumo.totalCapsulas],
-    ['Total', dinheiro(resumo.totalGeral)]
+    ['Total', dinheiro(resumo.totalGeral)],
+    ['Recebido', dinheiro(resumo.totalRecebido)],
+    ['A receber', dinheiro(resumo.totalAReceber)]
   ]
     .map(([rotulo, valor]) => `<div class="numero"><b>${esc(valor)}</b><span>${esc(rotulo)}</span></div>`)
     .join('');
@@ -422,14 +519,29 @@ function desenharFechamento({ rodada, resumo }) {
     </table>`;
 
   $('#lista-pessoas').innerHTML = resumo.pessoas
-    .map(
-      (pessoa) => `
-      <div class="pessoa">
-        <h3>${esc(pessoa.nome)}</h3>
+    .map((pessoa) => {
+      const situacao = pessoa.confirmadoEm
+        ? { classe: 'pago', texto: 'pago' }
+        : pessoa.pagoEm
+          ? { classe: 'avisou', texto: 'avisou que pagou' }
+          : { classe: 'devendo', texto: 'não pagou' };
+
+      return `
+      <div class="pessoa ${situacao.classe}" data-usuario="${esc(pessoa.usuarioId)}">
+        <h3>${esc(pessoa.nome)} <span class="situacao">${situacao.texto}</span></h3>
         <ul>${pessoa.itens.map((i) => `<li>${i.quantidade}× ${esc(i.nome)}</li>`).join('')}</ul>
         <div class="total-pessoa">${dinheiro(pessoa.total)}</div>
-      </div>`
-    )
+        ${
+          pessoa.pagoEm && !pessoa.confirmadoEm
+            ? `<p class="quem">Avisou em ${quandoFoi(pessoa.pagoEm)}.</p>`
+            : ''
+        }
+        <label class="interruptor confirmar">
+          <input type="checkbox" data-acao="confirmar" ${pessoa.confirmadoEm ? 'checked' : ''}>
+          <span>Recebi o dinheiro</span>
+        </label>
+      </div>`;
+    })
     .join('');
 }
 
@@ -701,6 +813,7 @@ async function carregarProdutos() {
 async function carregarMeuPedido() {
   const dados = await api('/api/meu-pedido');
   estado.pedido = dados.pedido;
+  estado.pix = dados.pix;
   estado.carrinho.clear();
   if (dados.pedido) {
     for (const item of dados.pedido.itens) estado.carrinho.set(item.produtoId, item.quantidade);
@@ -806,6 +919,53 @@ $('#grade-produtos').addEventListener('click', (evento) => {
 
 $('#botao-enviar').addEventListener('click', enviarPedido);
 $('#botao-cancelar').addEventListener('click', cancelarPedido);
+
+$('#botao-paguei').addEventListener('click', async () => {
+  const botao = $('#botao-paguei');
+  botao.disabled = true;
+  try {
+    const resposta = await api('/api/meu-pedido/pagamento', {
+      method: 'POST',
+      corpo: { pago: !estado.pedido.pagoEm }
+    });
+    estado.pedido = resposta.pedido;
+    desenharPagamento();
+    torradeira(resposta.pedido.pagoEm ? 'Avisado. O comprador vai confirmar.' : 'Aviso de pagamento desfeito.');
+  } catch (falha) {
+    botao.disabled = false;
+    torradeira(falha.message, true);
+  }
+});
+
+$('#botao-copiar-pix').addEventListener('click', async () => {
+  if (!estado.pix) return;
+  try {
+    await navigator.clipboard.writeText(estado.pix.brcode);
+    torradeira('Código Pix copiado. Cole no seu banco.');
+  } catch {
+    // Sem permissão para a área de transferência: mostra o código para copiar na mão.
+    prompt('Copie o código Pix:', estado.pix.brcode);
+  }
+});
+
+$('#lista-pessoas').addEventListener('change', async (evento) => {
+  const caixa = evento.target.closest('input[data-acao="confirmar"]');
+  if (!caixa) return;
+  const cartao = caixa.closest('.pessoa');
+  caixa.disabled = true;
+  try {
+    await api(`/api/pedidos/${cartao.dataset.usuario}/pagamento`, {
+      method: 'PATCH',
+      corpo: { confirmado: caixa.checked }
+    });
+    torradeira(caixa.checked ? 'Pagamento confirmado.' : 'Confirmação desfeita.');
+    await carregarFechamento();
+  } catch (falha) {
+    caixa.checked = !caixa.checked;
+    caixa.disabled = false;
+    torradeira(falha.message, true);
+  }
+});
 
 $('#botao-copiar').addEventListener('click', copiarLista);
 $('#link-csv').addEventListener('click', () => baixarCsv(null));

@@ -105,6 +105,25 @@
         </div>
         <button type="button" class="botao verde largo" id="botao-enviar" disabled>Enviar pedido</button>
         <div class="recado-enviado escondido" id="recado-enviado"></div>
+
+        <!-- ---------- pagamento ---------- -->
+        <section class="pagamento escondido" id="bloco-pagamento" aria-label="Pagamento">
+          <h3>Agora é só pagar</h3>
+          <p class="pagamento-dica">Aponte a câmera do seu banco para o código.</p>
+          <div class="qr" id="qr-pix"></div>
+          <div class="pix-dados">
+            <span class="pix-rotulo">Pix de</span>
+            <b id="pix-nome"></b>
+            <span class="pix-rotulo">Chave (CPF)</span>
+            <code id="pix-chave"></code>
+            <span class="pix-rotulo">Valor</span>
+            <b id="pix-valor"></b>
+          </div>
+          <button type="button" class="botao claro largo" id="botao-copiar-pix">Copiar código Pix</button>
+          <button type="button" class="botao verde largo" id="botao-paguei">Já paguei</button>
+          <p class="aviso-pagamento escondido" id="aviso-pagamento"></p>
+        </section>
+
         <button type="button" class="botao perigo largo escondido" id="botao-cancelar">Cancelar meu pedido</button>
       </aside>
     </div>

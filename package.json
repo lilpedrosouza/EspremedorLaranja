@@ -7,10 +7,12 @@
   "scripts": {
     "start": "node servidor.js",
     "testar-banco": "node scripts/testar-banco.js",
-    "atualizar-catalogo": "node scripts/atualizar-produtos.js"
+    "atualizar-catalogo": "node scripts/atualizar-produtos.js",
+    "configurar-pix": "node scripts/configurar-pix.js"
   },
   "dependencies": {
-    "pg": "^8.13.1"
+    "pg": "^8.13.1",
+    "qrcode": "^1.5.4"
   },
   "engines": {
     "node": ">=18"

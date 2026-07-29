@@ -59,7 +59,23 @@ create table if not exists pedidos (
   itens         jsonb       not null default '[]'::jsonb,
   observacao    text        not null default '',
   atualizado_em timestamptz not null default now(),
+  -- Duas marcações independentes, de propósito: "avisei que paguei" (a pessoa)
+  -- e "confirmo que caiu" (o comprador). Sem isso não dá para saber a diferença
+  -- entre quem ainda não pagou e quem pagou mas o comprador não conferiu.
+  pago_em       timestamptz,
+  confirmado_em timestamptz,
   primary key (rodada_id, usuario_id)
+);
+
+alter table pedidos add column if not exists pago_em       timestamptz;
+alter table pedidos add column if not exists confirmado_em timestamptz;
+
+-- Configuração da roda: hoje guarda a chave Pix de quem recebe.
+-- Fica no banco, e não no código, porque chave Pix costuma ser CPF — dado
+-- pessoal que não deve entrar num repositório público.
+create table if not exists configuracao (
+  chave text primary key,
+  valor text not null
 );
 
 create index if not exists pedidos_por_rodada on pedidos (rodada_id);

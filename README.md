@@ -96,6 +96,38 @@ Local elas saem do `.env` (que o Git ignora). Na Railway, do painel.
 5. Compra no site e clica em **Fechar rodada e começar outra**. A rodada antiga
    vira histórico.
 
+## Pagamento por Pix
+
+Quem envia o pedido vê na hora o QR Code do comprador, **já com o valor exato
+que aquela pessoa deve** — mais o "copia e cola" e a chave escrita na tela.
+Depois de pagar, ela marca *Já paguei*; o comprador confere no **Fechamento** e
+marca *Recebi o dinheiro*. São duas marcações separadas de propósito: uma coisa
+é a pessoa avisar, outra é o dinheiro ter caído.
+
+O Fechamento mostra a situação de cada um (*não pagou* · *avisou que pagou* ·
+*pago*) e os totais **Recebido** e **A receber**.
+
+Mexeu no pedido depois de pagar? As duas marcações caem e o QR passa a valer o
+novo valor — senão alguém pagaria a conta errada.
+
+### Configurar a chave
+
+```bash
+node scripts/configurar-pix.js "000.000.000-00" "Nome De Quem Recebe" "Sao Paulo"
+node scripts/configurar-pix.js --mostrar    # confere o que está gravado
+node scripts/configurar-pix.js --apagar     # tira o QR da tela
+```
+
+Serve CPF, CNPJ, telefone, e-mail ou chave aleatória.
+
+**A chave fica no banco, nunca no código.** Chave Pix costuma ser CPF, que é
+dado pessoal, e este repositório é público — commitar isso exporia o CPF a
+qualquer pessoa na internet, para sempre. No banco, ela só chega a quem está
+logado no sistema.
+
+Sem chave configurada nada quebra: a tela avisa para combinar o pagamento com o
+comprador, e o resto segue funcionando.
+
 ## Segurança — leia antes de divulgar o link
 
 **O cadastro é aberto.** Qualquer pessoa com o endereço pode criar um acesso e
@@ -177,8 +209,11 @@ servidor.js                    servidor HTTP e regras
 banco/schema.sql               estrutura das tabelas (roda sozinho ao subir)
 lib/banco.js                   o único lugar que fala SQL
 lib/catalogo-nescafe.js        leitura do site da Nescafé
+lib/pix.js                     monta o BR Code do Pix (copia e cola / QR)
 lib/ambiente.js                lê o .env quando você roda local
 scripts/atualizar-produtos.js  atualização do catálogo pelo terminal
+scripts/configurar-pix.js      define a chave Pix de quem recebe
+scripts/testar-banco.js        confere a conexão com o banco
 publico/                       a tela (HTML, CSS e JavaScript)
   config.js                    endereço da API, só se o front for hospedado à parte
 dados-iniciais/produtos.json   catálogo de partida

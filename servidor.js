@@ -18,6 +18,8 @@ const os = require('os');
 const crypto = require('crypto');
 const catalogoNescafe = require('./lib/catalogo-nescafe');
 const banco = require('./lib/banco');
+const pix = require('./lib/pix');
+const qrcode = require('qrcode');
 
 // PORT vem primeiro: é o que a hospedagem define, e ela precisa ganhar de um
 // PORTA que tenha sobrado do .env. Escutar numa porta diferente da que a
@@ -230,7 +232,9 @@ function resumoDaRodada(pedidos) {
       atualizadoEm: pedido.atualizadoEm,
       itens: pedido.itens,
       total: totalPessoa,
-      capsulas: capsulasPessoa
+      capsulas: capsulasPessoa,
+      pagoEm: pedido.pagoEm,
+      confirmadoEm: pedido.confirmadoEm
     });
   }
 
@@ -244,7 +248,9 @@ function resumoDaRodada(pedidos) {
     pessoas,
     totalGeral: produtos.reduce((soma, p) => soma + p.subtotal, 0),
     totalCaixas: produtos.reduce((soma, p) => soma + p.quantidade, 0),
-    totalCapsulas: pessoas.reduce((soma, p) => soma + p.capsulas, 0)
+    totalCapsulas: pessoas.reduce((soma, p) => soma + p.capsulas, 0),
+    totalRecebido: pessoas.reduce((soma, p) => soma + (p.confirmadoEm ? p.total : 0), 0),
+    totalAReceber: pessoas.reduce((soma, p) => soma + (p.confirmadoEm ? 0 : p.total), 0)
   };
 }
 
@@ -290,6 +296,34 @@ function csvDaRodada(rodada, resumo) {
   }
 
   return `\uFEFF${linhas.join('\r\n')}\r\n`;
+}
+
+/** Quanto a pessoa deve nesta rodada, a partir dos itens que ela pediu. */
+function totalDoPedido(pedido) {
+  if (!pedido) return 0;
+  return pedido.itens.reduce((soma, item) => soma + (Number(item.preco) || 0) * item.quantidade, 0);
+}
+
+/**
+ * Monta o Pix de quem vai pagar: o "copia e cola" já com o valor da pessoa e o
+ * mesmo texto desenhado como QR. Sem chave configurada, devolve null — a tela
+ * então explica o que fazer em vez de mostrar um QR quebrado.
+ */
+async function pixParaPagar(valor) {
+  const chave = await banco.lerConfiguracao('pix_chave');
+  if (!chave) return null;
+
+  const nome = (await banco.lerConfiguracao('pix_nome')) || 'Comprador';
+  const cidade = (await banco.lerConfiguracao('pix_cidade')) || 'BRASIL';
+  const brcode = pix.montarBrCode({ chave, nome, cidade, valor });
+
+  return {
+    chave,
+    nome,
+    valor,
+    brcode,
+    qrcode: await qrcode.toString(brcode, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' })
+  };
 }
 
 async function rodarSincronizacao(disparadaPor) {
@@ -491,9 +525,11 @@ async function tratarApi(requisicao, resposta, url) {
   if (rota === '/api/meu-pedido' && metodo === 'GET') {
     if (!exigeLogin()) return;
     const aberta = await banco.garantirRodadaAberta(criarRodada);
+    const pedido = await banco.pedidoDe(aberta.id, usuario.id);
     return responderJson(resposta, 200, {
       rodada: { id: aberta.id, nome: aberta.nome, observacao: aberta.observacao },
-      pedido: await banco.pedidoDe(aberta.id, usuario.id)
+      pedido,
+      pix: pedido ? await pixParaPagar(totalDoPedido(pedido)) : null
     });
   }
 
@@ -530,6 +566,28 @@ async function tratarApi(requisicao, resposta, url) {
       itens,
       observacao: String(corpo.observacao || '').trim().slice(0, 300)
     });
+    // O Pix vai junto: é aqui que a pessoa acaba de fechar o pedido e precisa pagar.
+    return responderJson(resposta, 200, { pedido, pix: await pixParaPagar(totalDoPedido(pedido)) });
+  }
+
+  /* ---- pagamento ---- */
+
+  if (rota === '/api/meu-pedido/pagamento' && metodo === 'POST') {
+    if (!exigeLogin()) return;
+    const corpo = await lerCorpo(requisicao);
+    const aberta = await banco.garantirRodadaAberta(criarRodada);
+    const pedido = await banco.marcarPago(aberta.id, usuario.id, corpo.pago !== false);
+    if (!pedido) return erro(resposta, 404, 'Envie seu pedido antes de marcar o pagamento.');
+    return responderJson(resposta, 200, { pedido });
+  }
+
+  const casaPagamento = rota.match(/^\/api\/pedidos\/([\w-]+)\/pagamento$/);
+  if (casaPagamento && metodo === 'PATCH') {
+    if (!exigeComprador()) return;
+    const corpo = await lerCorpo(requisicao);
+    const aberta = await banco.garantirRodadaAberta(criarRodada);
+    const pedido = await banco.confirmarPagamento(aberta.id, casaPagamento[1], corpo.confirmado !== false);
+    if (!pedido) return erro(resposta, 404, 'Essa pessoa não tem pedido nesta rodada.');
     return responderJson(resposta, 200, { pedido });
   }
 

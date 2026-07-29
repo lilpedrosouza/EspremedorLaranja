@@ -413,6 +413,91 @@ a { color: var(--casca); }
 
 .vazio { color: var(--tinta-fraca); font-size: 13px; margin: 0; }
 
+/* ---------- pagamento ---------- */
+
+.pagamento {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--linha);
+}
+
+.pagamento h3 {
+  margin: 0 0 2px;
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.pagamento-dica { margin: 0 0 12px; font-size: 12px; color: var(--tinta-fraca); }
+
+.qr {
+  background: #fff;
+  border: 1px solid var(--linha);
+  border-radius: var(--raio);
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.qr:empty { display: none; }
+.qr svg { display: block; width: 100%; height: auto; }
+
+.pix-dados {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: baseline;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.pix-rotulo {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tinta-fraca);
+}
+
+.pix-dados code {
+  font-family: var(--mono);
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.aviso-pagamento {
+  margin: 12px 0 0;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.aviso-pagamento.bom { background: #e8f6ef; color: #05663f; }
+.aviso-pagamento.neutro { background: #eef1f4; color: var(--tinta-fraca); }
+.aviso-pagamento.atencao { background: #fdf3f2; color: #8c1f18; }
+
+/* situação de pagamento no fechamento */
+.pessoa.pago { border-left: 3px solid var(--verde); }
+.pessoa.avisou { border-left: 3px solid var(--polpa); }
+.pessoa.devendo { border-left: 3px solid var(--linha); }
+
+.pessoa h3 { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+
+.situacao {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #eef1f4;
+  color: var(--tinta-fraca);
+}
+
+.pessoa.pago .situacao { background: #e8f6ef; color: #05663f; }
+.pessoa.avisou .situacao { background: #fdefe2; color: #8a4b12; }
+
+.confirmar { margin-top: 10px; }
+
 /* ---------- fechamento ---------- */
 
 .numeros {
