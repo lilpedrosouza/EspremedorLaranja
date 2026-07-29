@@ -39,7 +39,12 @@ jobs:
             echo "::warning::publico/config.js está com window.API vazio. No Pages isso faz a tela procurar a API no próprio github.io, onde ela não existe. Preencha com o endereço do backend na Railway."
           fi
 
+      # enablement: true liga o Pages no repositório na primeira execução.
+      # Sem isso a action procura um site que ainda não existe e falha com 404.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: publico

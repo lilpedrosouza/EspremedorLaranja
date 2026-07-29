@@ -45,9 +45,16 @@ Netlify, Cloudflare Pages). Custa duas configurações a mais:
    ```
    Sem isso o navegador bloqueia as chamadas por CORS.
 
-Para o GitHub Pages já existe um workflow pronto: ative em **Settings → Pages →
-Source: GitHub Actions** e o [`.github/workflows/pages.yml`](.github/workflows/pages.yml)
-publica a pasta `publico/` a cada push na `main`.
+Para o GitHub Pages já existe um workflow pronto:
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml) publica a pasta
+`publico/` a cada push na `main`. Ele liga o Pages sozinho na primeira execução.
+
+Se mesmo assim falhar com *"Get Pages site failed … Not Found"*, ligue na mão em
+**Settings → Pages → Source: GitHub Actions** e rode o workflow de novo. Isso
+acontece quando a conta não deixa a action habilitar o Pages por conta própria.
+
+O endereço fica `https://SEUUSUARIO.github.io/EspremedorLaranja/` — repare na
+pasta no fim, que é o padrão de repositório de projeto.
 
 > Vale lembrar: sem o passo 2 nada disso é necessário. Um deploy só é mais
 > simples de manter que dois.
