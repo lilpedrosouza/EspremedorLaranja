@@ -15,7 +15,9 @@ const catalogoNescafe = require('./lib/catalogo-nescafe');
 
 const PORTA = Number(process.env.PORTA || process.env.PORT || 3000);
 const RAIZ = __dirname;
-const DIR_DADOS = path.join(RAIZ, 'dados');
+// Em hospedagem, aponte DIR_DADOS para um disco persistente — o disco padrão
+// dessas plataformas é apagado a cada deploy, e com ele todos os pedidos.
+const DIR_DADOS = process.env.DIR_DADOS || path.join(RAIZ, 'dados');
 const DIR_PUBLICO = path.join(RAIZ, 'publico');
 const DIR_SEMENTE = path.join(RAIZ, 'dados-iniciais');
 
@@ -163,7 +165,13 @@ function usuarioDaRequisicao(requisicao) {
   return usuarios.find((u) => u.id === sessao.usuarioId) || null;
 }
 
-function abrirSessao(resposta, usuarioId) {
+// Atrás do proxy da hospedagem a conexão chega como HTTP, mas o navegador falou
+// HTTPS. Sem o Secure aí, o cookie de sessão trafegaria em claro num site público.
+function porHttps(requisicao) {
+  return String(requisicao.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+}
+
+function abrirSessao(requisicao, resposta, usuarioId) {
   const token = crypto.randomBytes(24).toString('hex');
   const sessoes = ler(ARQ_SESSOES, {});
   limparSessoesVencidas(sessoes);
@@ -171,7 +179,8 @@ function abrirSessao(resposta, usuarioId) {
   gravar(ARQ_SESSOES, sessoes);
   resposta.setHeader(
     'Set-Cookie',
-    `${NOME_COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${DURACAO_SESSAO / 1000}`
+    `${NOME_COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${DURACAO_SESSAO / 1000}` +
+      (porHttps(requisicao) ? '; Secure' : '')
   );
 }
 
@@ -182,7 +191,10 @@ function fecharSessao(requisicao, resposta) {
     delete sessoes[token];
     gravar(ARQ_SESSOES, sessoes);
   }
-  resposta.setHeader('Set-Cookie', `${NOME_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+  resposta.setHeader(
+    'Set-Cookie',
+    `${NOME_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0` + (porHttps(requisicao) ? '; Secure' : '')
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -461,7 +473,7 @@ async function tratarApi(requisicao, resposta, url) {
     };
     usuarios.push(novo);
     gravar(ARQ_USUARIOS, usuarios);
-    abrirSessao(resposta, novo.id);
+    abrirSessao(requisicao, resposta, novo.id);
     return responderJson(resposta, 201, { id: novo.id, nome: novo.nome, papel: novo.papel });
   }
 
@@ -472,7 +484,7 @@ async function tratarApi(requisicao, resposta, url) {
     if (!encontrado || !senhaConfere(String(corpo.senha || ''), encontrado.senha)) {
       return erro(resposta, 401, 'Nome ou senha não conferem.');
     }
-    abrirSessao(resposta, encontrado.id);
+    abrirSessao(requisicao, resposta, encontrado.id);
     return responderJson(resposta, 200, { id: encontrado.id, nome: encontrado.nome, papel: encontrado.papel });
   }
 

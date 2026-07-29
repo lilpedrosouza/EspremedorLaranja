@@ -8,7 +8,8 @@ arquivos JSON dentro da pasta `dados/`.
 
 > **Este projeto precisa de um servidor Node rodando.** Ele não funciona no
 > GitHub Pages, que só serve arquivos estáticos e não executa `servidor.js` —
-> sem ele não há login, pedido nem fechamento.
+> sem ele não há login, pedido nem fechamento. Para deixar no ar pela internet,
+> veja [Publicar na internet](#publicar-na-internet).
 
 ## Subir o sistema
 
@@ -62,6 +63,47 @@ WantedBy=multi-user.target
 ```bash
 sudo systemctl enable --now espremedor
 ```
+
+## Publicar na internet
+
+O GitHub Pages **não serve** para este projeto: ele publica arquivos estáticos e
+não executa Node. A tela até abriria, mas toda chamada `/api/*` daria erro e nada
+funcionaria. É preciso uma hospedagem que rode `node servidor.js`.
+
+O repositório já vem com [`render.yaml`](render.yaml) pronto para o
+[Render](https://render.com): *New* → *Blueprint* → aponte para este repositório.
+Serve igual para Railway ou Fly.io — o que importa é rodar Node e ter disco.
+
+### O disco é a parte que importa
+
+Os pedidos ficam em arquivos JSON. Em hospedagem, o sistema de arquivos padrão é
+**efêmero**: some a cada deploy. No plano free do Render some também toda vez que
+o serviço acorda depois de 15 minutos parado — junto com todos os cadastros e a
+rodada em andamento.
+
+Por isso o `render.yaml` monta um disco e aponta a variável `DIR_DADOS` para ele:
+
+```yaml
+envVars:
+  - key: DIR_DADOS
+    value: /var/espremedor/dados
+disk:
+  mountPath: /var/espremedor
+```
+
+Disco persistente exige plano pago (~US$ 7/mês). Rodar no free sem disco
+funciona para experimentar, mas **perde os dados** — não use para uma rodada de
+verdade.
+
+### Antes de divulgar o link
+
+Num endereço público, qualquer pessoa que abrir o site pode criar um acesso pela
+aba *Criar acesso* e ver o catálogo e a rodada. O cadastro é aberto: não há
+convite nem código. Na rede interna isso não era problema; na internet, é.
+
+O lado bom é que a hospedagem serve por HTTPS, então as senhas param de trafegar
+em texto puro — o servidor já marca o cookie de sessão como `Secure` quando
+percebe que veio por HTTPS.
 
 ## De onde vêm os sabores
 
@@ -138,6 +180,7 @@ círculo volta a aparecer sozinho.
 
 ```
 servidor.js                  servidor HTTP e regras
+render.yaml                  deploy na hospedagem (disco persistente)
 lib/catalogo-nescafe.js      leitura do site da Nescafé
 scripts/atualizar-produtos.js  atualização pelo terminal
 publico/                     a tela (HTML, CSS e JavaScript)
@@ -157,7 +200,11 @@ colegas, hashes de senha e sessões abertas. Não tire de lá.
 
 ## Sobre segurança
 
-Isto foi feito para uma rede interna entre colegas: o acesso é por HTTP simples,
-sem criptografia no caminho. As senhas ficam guardadas com scrypt e sal, mas
-viajam em texto puro dentro da rede. Combine com o pessoal para não reaproveitar
-senha de outro sistema — e não exponha essa porta para fora da empresa.
+Isto foi feito para uma rede interna entre colegas. Rodando localmente o acesso é
+por HTTP simples, sem criptografia no caminho: as senhas ficam guardadas com
+scrypt e sal, mas viajam em texto puro dentro da rede. Combine com o pessoal para
+não reaproveitar senha de outro sistema.
+
+Publicando numa hospedagem com HTTPS esse problema do caminho some, mas aparece
+outro: o cadastro é aberto a quem tiver o link. Veja
+[Antes de divulgar o link](#antes-de-divulgar-o-link).
