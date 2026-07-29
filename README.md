@@ -47,11 +47,12 @@ Netlify, Cloudflare Pages). Custa duas configurações a mais:
 
 Para o GitHub Pages já existe um workflow pronto:
 [`.github/workflows/pages.yml`](.github/workflows/pages.yml) publica a pasta
-`publico/` a cada push na `main`. Ele liga o Pages sozinho na primeira execução.
+`publico/` a cada push na `main`.
 
-Se mesmo assim falhar com *"Get Pages site failed … Not Found"*, ligue na mão em
-**Settings → Pages → Source: GitHub Actions** e rode o workflow de novo. Isso
-acontece quando a conta não deixa a action habilitar o Pages por conta própria.
+**A origem precisa estar em Actions:** vá em **Settings → Pages → Source** e
+escolha **GitHub Actions**. Se ficar em *"Deploy from a branch"*, o Pages serve a
+raiz do repositório pelo Jekyll — o que vai no ar é o README renderizado, e não a
+tela. Dá para perceber pelo título da aba trazer `| EspremedorLaranja` no fim.
 
 O endereço fica `https://SEUUSUARIO.github.io/EspremedorLaranja/` — repare na
 pasta no fim, que é o padrão de repositório de projeto.

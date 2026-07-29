@@ -13,4 +13,4 @@
  * Nesse caso o backend também precisa liberar este endereço na variável
  * ORIGENS_PERMITIDAS — veja o README.
  */
-window.API = '';
+window.API = 'https://espremedorlaranja-production.up.railway.app';

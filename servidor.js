@@ -19,7 +19,10 @@ const crypto = require('crypto');
 const catalogoNescafe = require('./lib/catalogo-nescafe');
 const banco = require('./lib/banco');
 
-const PORTA = Number(process.env.PORTA || process.env.PORT || 3000);
+// PORT vem primeiro: é o que a hospedagem define, e ela precisa ganhar de um
+// PORTA que tenha sobrado do .env. Escutar numa porta diferente da que a
+// Railway espera derruba o site inteiro com "Application not found".
+const PORTA = Number(process.env.PORT || process.env.PORTA || 3000);
 const DIR_PUBLICO = path.join(__dirname, 'publico');
 
 const DURACAO_SESSAO = 30 * 24 * 60 * 60 * 1000; // 30 dias
