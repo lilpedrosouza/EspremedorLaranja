@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Espremedor de Laranja — pedidos da copa</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><ellipse cx='20.5' cy='6' rx='4.2' ry='2.3' fill='%233f9e56' transform='rotate(-20 20.5 6)'/><rect x='15.1' y='4.2' width='1.8' height='4.4' rx='.9' fill='%237a4a22'/><circle cx='16' cy='18.5' r='11.5' fill='%23f5811f'/><circle cx='11.8' cy='14.2' r='3.4' fill='%23ffb066' opacity='.55'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+
+<!-- ---------- entrada ---------- -->
+<section id="tela-entrada" class="entrada escondido">
+  <div class="cartao-entrada">
+    <div class="marca-grande">
+      <svg class="laranja" viewBox="0 0 32 32" role="img" aria-label="Laranja">
+        <ellipse cx="20.5" cy="6" rx="4.2" ry="2.3" fill="#3f9e56" transform="rotate(-20 20.5 6)"/>
+        <rect x="15.1" y="4.2" width="1.8" height="4.4" rx=".9" fill="#7a4a22"/>
+        <circle cx="16" cy="18.5" r="11.5" fill="#f5811f"/>
+        <circle cx="11.8" cy="14.2" r="3.4" fill="#ffb066" opacity=".55"/>
+      </svg>
+      <h1>Espremedor de Laranja</h1>
+    </div>
+    <p class="abertura">Escolha seus sabores de cápsula. Uma pessoa faz a compra pra todo mundo.</p>
+
+    <div class="abas-entrada" role="group" aria-label="Entrar ou criar acesso">
+      <button type="button" id="aba-entrar" aria-pressed="true">Entrar</button>
+      <button type="button" id="aba-criar" aria-pressed="false">Criar acesso</button>
+    </div>
+
+    <div id="erro-entrada" class="recado-erro escondido" role="alert"></div>
+
+    <div class="campo">
+      <label for="campo-nome">Seu nome</label>
+      <input id="campo-nome" autocomplete="name" placeholder="Como o pessoal te chama">
+    </div>
+    <div class="campo">
+      <label for="campo-senha">Senha</label>
+      <input id="campo-senha" type="password" autocomplete="current-password" placeholder="Mínimo de 4 caracteres">
+    </div>
+
+    <button type="button" id="botao-entrada" class="botao largo">Entrar</button>
+    <p class="dica" id="dica-entrada">Ainda não tem acesso? Toque em “Criar acesso”.</p>
+  </div>
+</section>
+
+<!-- ---------- aplicação ---------- -->
+<div id="tela-app" class="escondido">
+  <header class="topo">
+    <div class="topo-interno">
+      <div class="marca">
+        <svg class="laranja" viewBox="0 0 32 32" role="img" aria-label="Laranja">
+          <ellipse cx="20.5" cy="6" rx="4.2" ry="2.3" fill="#3f9e56" transform="rotate(-20 20.5 6)"/>
+          <rect x="15.1" y="4.2" width="1.8" height="4.4" rx=".9" fill="#7a4a22"/>
+          <circle cx="16" cy="18.5" r="11.5" fill="#f5811f"/>
+          <circle cx="11.8" cy="14.2" r="3.4" fill="#ffb066" opacity=".55"/>
+        </svg>
+        <strong>Espremedor de Laranja</strong>
+        <span>pedidos da copa</span>
+      </div>
+      <nav class="navegacao" id="navegacao" aria-label="Seções">
+        <button type="button" data-aba="loja" aria-current="true">Sabores</button>
+        <button type="button" data-aba="fechamento" class="so-comprador escondido">Fechamento</button>
+        <button type="button" data-aba="catalogo" class="so-comprador escondido">Catálogo</button>
+        <button type="button" data-aba="pessoas">Minha conta</button>
+      </nav>
+      <div class="usuario-topo">
+        <b id="nome-usuario"></b>
+        <span class="selo escondido" id="selo-comprador">comprador</span>
+        <button type="button" class="botao claro miudo" id="botao-sair">Sair</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ---------- sabores ---------- -->
+  <main class="pagina" id="aba-loja">
+    <div class="faixa-rodada">
+      <div>
+        <h1 id="titulo-rodada">Rodada</h1>
+        <p id="observacao-rodada">Escolha os sabores e a quantidade de caixas que você quer.</p>
+      </div>
+    </div>
+
+    <div class="colunas">
+      <div>
+        <div class="filtros">
+          <input class="busca" id="busca" type="search" placeholder="Buscar sabor (ex.: chococino, lungo, descafeinado)" aria-label="Buscar sabor">
+          <div class="fichas" id="fichas-categorias"></div>
+        </div>
+        <div class="grade" id="grade-produtos"></div>
+        <p class="vazio escondido" id="sem-resultado">Nenhum sabor com esse nome. Tente outra palavra.</p>
+      </div>
+
+      <aside class="painel" aria-label="Seu pedido">
+        <h2>Seu pedido</h2>
+        <ul class="itens-painel" id="itens-painel"></ul>
+        <p class="vazio" id="painel-vazio">Nada escolhido ainda. Use o + nos cartões ao lado.</p>
+        <div class="totais">
+          <div><span>Caixas</span><span id="total-caixas">0</span></div>
+          <div><span>Cápsulas</span><span id="total-capsulas">0</span></div>
+          <div class="grande"><span>Total</span><span id="total-valor">R$ 0,00</span></div>
+        </div>
+        <button type="button" class="botao verde largo" id="botao-enviar" disabled>Enviar pedido</button>
+        <div class="recado-enviado escondido" id="recado-enviado"></div>
+        <button type="button" class="botao perigo largo escondido" id="botao-cancelar">Cancelar meu pedido</button>
+      </aside>
+    </div>
+  </main>
+
+  <!-- ---------- fechamento ---------- -->
+  <main class="pagina escondido" id="aba-fechamento">
+    <div class="faixa-rodada">
+      <div>
+        <h1 id="titulo-fechamento">Fechamento</h1>
+        <p>Tudo que o pessoal pediu nesta rodada, pronto pra você comprar.</p>
+      </div>
+    </div>
+
+    <div class="numeros" id="numeros-fechamento"></div>
+
+    <section class="bloco">
+      <h2>Lista de compra</h2>
+      <p class="subtitulo">Some tudo por sabor. É essa lista que vai pro carrinho no site da Nescafé.</p>
+      <div id="tabela-compra"></div>
+      <div class="acoes">
+        <button type="button" class="botao claro" id="botao-copiar">Copiar lista</button>
+        <a class="botao claro" id="link-csv" href="/api/fechamento.csv">Baixar planilha</a>
+        <a class="botao claro" href="https://www.nescafe-dolcegusto.com.br/sabores" target="_blank" rel="noopener">Abrir site da Nescafé</a>
+      </div>
+    </section>
+
+    <section class="bloco">
+      <h2>Quanto cada um deve</h2>
+      <p class="subtitulo">Pra você acertar as contas depois da compra.</p>
+      <div class="pessoas" id="lista-pessoas"></div>
+    </section>
+
+    <section class="bloco">
+      <h2>Rodada</h2>
+      <p class="subtitulo">Renomeie, deixe um recado pro pessoal ou feche a rodada quando terminar a coleta.</p>
+      <div class="linha-campos">
+        <div class="campo">
+          <label for="nome-rodada">Nome da rodada</label>
+          <input id="nome-rodada" placeholder="Rodada de agosto">
+        </div>
+        <div class="campo">
+          <label for="recado-rodada">Recado na tela do pessoal</label>
+          <input id="recado-rodada" placeholder="Peça até sexta, 12h">
+        </div>
+        <button type="button" class="botao claro" id="botao-salvar-rodada">Salvar</button>
+      </div>
+      <div class="acoes">
+        <button type="button" class="botao" id="botao-fechar-rodada">Fechar rodada e começar outra</button>
+      </div>
+    </section>
+
+    <section class="bloco">
+      <h2>Rodadas anteriores</h2>
+      <div id="historico"></div>
+    </section>
+  </main>
+
+  <!-- ---------- catálogo ---------- -->
+  <main class="pagina escondido" id="aba-catalogo">
+    <div class="faixa-rodada">
+      <div>
+        <h1>Catálogo</h1>
+        <p id="estado-sincronia">Os sabores vêm do site da Nescafé Dolce Gusto.</p>
+      </div>
+      <button type="button" class="botao claro" id="botao-sincronizar" style="margin-left:auto">Atualizar do site agora</button>
+    </div>
+
+    <section class="bloco">
+      <h2>Incluir um item na mão</h2>
+      <p class="subtitulo">Útil quando você compra algo que não está na página de sabores.</p>
+      <div class="linha-campos">
+        <div class="campo">
+          <label for="novo-nome">Nome</label>
+          <input id="novo-nome" placeholder="Ex.: CHOCOCINO ALPINO 16 CÁPSULAS">
+        </div>
+        <div class="campo">
+          <label for="novo-preco">Preço (R$)</label>
+          <input id="novo-preco" inputmode="decimal" placeholder="19,99">
+        </div>
+        <div class="campo">
+          <label for="novo-capsulas">Cápsulas</label>
+          <input id="novo-capsulas" inputmode="numeric" value="10">
+        </div>
+        <button type="button" class="botao claro" id="botao-novo-produto">Incluir</button>
+      </div>
+    </section>
+
+    <section class="bloco">
+      <h2>Todos os itens</h2>
+      <p class="subtitulo">Desmarque “na lista” pra esconder um item da tela do pessoal.</p>
+      <input class="busca" id="busca-catalogo" type="search" placeholder="Buscar no catálogo" aria-label="Buscar no catálogo">
+      <div id="tabela-catalogo"></div>
+    </section>
+  </main>
+
+  <!-- ---------- pessoas ---------- -->
+  <main class="pagina escondido" id="aba-pessoas">
+    <div class="faixa-rodada">
+      <div>
+        <h1 id="titulo-conta">Minha conta</h1>
+        <p id="subtitulo-conta">Troque sua senha quando quiser.</p>
+      </div>
+    </div>
+    <section class="bloco escondido" id="bloco-pessoas">
+      <h2>Quem tem acesso</h2>
+      <p class="subtitulo">O perfil de comprador vê o fechamento e cuida do catálogo.</p>
+      <div id="tabela-pessoas"></div>
+    </section>
+    <section class="bloco">
+      <h2>Minha senha</h2>
+      <div class="linha-campos">
+        <div class="campo">
+          <label for="senha-atual">Senha atual</label>
+          <input id="senha-atual" type="password" autocomplete="current-password">
+        </div>
+        <div class="campo">
+          <label for="senha-nova">Nova senha</label>
+          <input id="senha-nova" type="password" autocomplete="new-password">
+        </div>
+        <button type="button" class="botao claro" id="botao-trocar-senha">Trocar senha</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

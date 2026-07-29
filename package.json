@@ -1,0 +1,14 @@
+{
+  "name": "espremedor-de-laranja",
+  "version": "1.0.0",
+  "description": "Espremedor de Laranja — pedidos de cápsulas Nescafé Dolce Gusto para o pessoal do trabalho, com fechamento para quem faz a compra.",
+  "private": true,
+  "main": "servidor.js",
+  "scripts": {
+    "start": "node servidor.js",
+    "atualizar-catalogo": "node scripts/atualizar-produtos.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
