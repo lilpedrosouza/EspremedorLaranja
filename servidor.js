@@ -704,7 +704,7 @@ const servidor = http.createServer((requisicao, resposta) => {
         if (rede.family === 'IPv4' && !rede.internal) enderecos.push(rede.address);
       }
     }
-    console.log('\n  Espremedor de Laranja — pedidos da copa');
+    console.log('\n  Espremedor de Laranja');
     console.log('  --------------------------------------');
     for (const endereco of enderecos) console.log(`  http://${endereco}:${PORTA}`);
     console.log(`\n  Banco: Postgres${ORIGENS.length ? `\n  Front liberado de: ${ORIGENS.join(', ')}` : ''}`);

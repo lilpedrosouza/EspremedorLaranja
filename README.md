@@ -149,6 +149,19 @@ Duas travas evitam que uma leitura ruim estrague o catálogo:
 - se a leitura reconhecer **menos de 60%** do que já se conhecia, ninguém é
   marcado como *saiu do site*.
 
+### Cápsula avulsa × caixa
+
+O site lista o mesmo sabor duas vezes: `CAFÉ AU LAIT` é **uma cápsula**
+(R$ 1,79) e `CAFÉ AU LAIT 10 CÁPSULAS` é **a caixa** (R$ 17,90). Aqui se pede
+por caixa, então só o que tem a contagem de cápsulas no nome entra marcado na
+tela de pedido — senão bastaria alguém clicar no item errado para o fechamento
+cobrar dez vezes menos do que a compra custou.
+
+Nada é apagado: o avulso continua no catálogo, apenas desmarcado. Combos,
+acessórios e os pacotes "PARA NEGÓCIOS" (20 e 30 caixas) seguem a mesma regra.
+Se quiser algum deles na lista, marque "na lista" na aba **Catálogo** — a
+sincronização não desfaz essa escolha.
+
 ### Fotos dos sabores
 
 Quando a leitura vem pela API da loja, as fotos vêm junto. Se faltar alguma,
