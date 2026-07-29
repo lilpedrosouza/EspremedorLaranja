@@ -26,8 +26,12 @@ create table if not exists produtos (
   ativo        boolean       not null default true,
   origem       text          not null default 'site',
   fora_do_site boolean       not null default false,
-  imagem       text
+  imagem       text,
+  url          text
 );
+
+-- A coluna url chegou depois: bancos criados antes disso a ganham aqui.
+alter table produtos add column if not exists url text;
 
 create table if not exists rodadas (
   id          text primary key,

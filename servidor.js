@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Espremedor de Laranja — pedidos da copa.
+ * Espremedor de Laranja — pedidos de cápsulas.
  *
  * Servidor HTTP puro (só Node, sem framework) com os dados no Postgres/Supabase.
  * Suba com:  node servidor.js

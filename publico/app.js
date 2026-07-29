@@ -237,7 +237,11 @@ function desenharGrade() {
         <article class="cartao ${quantidade ? 'escolhido' : ''} ${indisponivel ? 'sem-estoque' : ''}" data-id="${esc(produto.id)}">
           <span class="disco" style="--cor:${corDe(produto.categoria)}" aria-hidden="true">${esc(marca)}${produto.imagem ? `<img src="${esc(produto.imagem)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</span>
           <div>
-            <h3>${esc(produto.nome)}</h3>
+            <h3>${
+              produto.url
+                ? `<a class="link-produto" href="${esc(produto.url)}" target="_blank" rel="noopener noreferrer">${esc(produto.nome)}<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3h7v7M13 3 6.5 9.5M11 9.5V13H3V5h3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="so-leitor">abre o sabor no site da Nescafé, em outra aba</span></a>`
+                : esc(produto.nome)
+            }</h3>
             ${produto.descricao ? `<p class="descricao">${esc(produto.descricao)}</p>` : ''}
             <p class="meta">${esc(produto.categoria)}${produto.capsulas ? ` · ${produto.capsulas} cápsulas` : ''}</p>
             <div class="linha-preco">

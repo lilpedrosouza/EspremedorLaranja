@@ -1,4 +1,4 @@
-/* Espremedor de Laranja — pedidos da copa */
+/* Espremedor de Laranja — pedidos de cápsulas */
 
 :root {
   --porcelana: #eceef0;
@@ -259,6 +259,38 @@ a { color: var(--casca); }
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.25;
+}
+
+/* O nome leva ao sabor no site da Nescafé. A setinha avisa que abre outra aba. */
+.link-produto {
+  color: inherit;
+  text-decoration: none;
+  display: inline;
+}
+
+.link-produto svg {
+  width: 11px;
+  height: 11px;
+  margin-left: 4px;
+  vertical-align: baseline;
+  color: var(--tinta-fraca);
+  flex: none;
+}
+
+.link-produto:hover { color: var(--casca); text-decoration: underline; text-underline-offset: 2px; }
+.link-produto:hover svg { color: var(--casca); }
+
+/* Visível só para leitor de tela. */
+.so-leitor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .cartao .descricao { margin: 0; font-size: 13px; color: var(--tinta-fraca); }

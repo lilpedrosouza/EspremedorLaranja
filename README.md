@@ -1,4 +1,4 @@
-# 🍊 Espremedor de Laranja — pedidos da copa
+# 🍊 Espremedor de Laranja — pedidos de cápsulas
 
 Cada pessoa entra, escolhe os sabores e a quantidade de caixas. Quem tem o perfil
 de **comprador** vê tudo somado numa lista só, com o quanto cada um deve.
