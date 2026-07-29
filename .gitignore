@@ -15,3 +15,8 @@ Thumbs.db
 
 # Configuração local de ferramentas
 .claude/settings.local.json
+
+# Ferramentas locais do assistente
+.agents/
+.claude/
+skills-lock.json

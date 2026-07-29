@@ -6,6 +6,7 @@
   "main": "servidor.js",
   "scripts": {
     "start": "node servidor.js",
+    "testar-banco": "node scripts/testar-banco.js",
     "atualizar-catalogo": "node scripts/atualizar-produtos.js"
   },
   "dependencies": {
