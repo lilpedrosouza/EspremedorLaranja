@@ -1,37 +1,30 @@
 'use strict';
 
 /**
- * Atualiza dados/produtos.json com o que está no site da Nescafé Dolce Gusto.
+ * Atualiza o catálogo no banco com o que está no site da Nescafé Dolce Gusto.
  *
  *   node scripts/atualizar-produtos.js            grava as mudanças
  *   node scripts/atualizar-produtos.js --simular  só mostra o que mudaria
  *
  * O servidor já faz isso sozinho ao subir e a cada 12 horas. Este script serve
  * para rodar na mão ou por agendamento (cron), com o servidor parado ou não.
+ *
+ * Precisa da mesma DATABASE_URL do servidor.
  */
 
-const fs = require('fs');
-const path = require('path');
-const catalogo = require('../lib/catalogo-nescafe');
+require('../lib/ambiente').carregar();
 
-const ARQUIVO = path.join(__dirname, '..', 'dados', 'produtos.json');
-const SEMENTE = path.join(__dirname, '..', 'dados-iniciais', 'produtos.json');
+const catalogo = require('../lib/catalogo-nescafe');
+const banco = require('../lib/banco');
+
 const simular = process.argv.includes('--simular');
 
-function ler(arquivo) {
-  try {
-    return JSON.parse(fs.readFileSync(arquivo, 'utf8'));
-  } catch {
-    return null;
-  }
-}
-
 (async () => {
-  const atual = ler(ARQUIVO) || ler(SEMENTE) || [];
-  console.log(`Catálogo atual: ${atual.length} itens.`);
-  console.log('Lendo o site da Nescafé (API da loja, com a página como reserva) …');
-
   try {
+    const atual = await banco.listarProdutos();
+    console.log(`Catálogo atual: ${atual.length} itens.`);
+    console.log('Lendo o site da Nescafé (API da loja, com a página como reserva) …');
+
     const resultado = await catalogo.sincronizar(atual);
     console.log(`Leitura pela estratégia "${resultado.estrategia}": ${resultado.encontrados} produtos.`);
     console.log(`Novos: ${resultado.novos} · Atualizados: ${resultado.atualizados} · Sumiram do site: ${resultado.sumiram}`);
@@ -48,12 +41,25 @@ function ler(arquivo) {
       return;
     }
 
-    fs.mkdirSync(path.dirname(ARQUIVO), { recursive: true });
-    fs.writeFileSync(ARQUIVO, JSON.stringify(resultado.catalogo, null, 2), 'utf8');
-    console.log(`\nGravado em ${ARQUIVO}.`);
+    await banco.salvarCatalogo(resultado.catalogo);
+    await banco.gravarSincronizacao({
+      ultima: new Date().toISOString(),
+      situacao: 'ok',
+      disparadaPor: 'script',
+      encontrados: resultado.encontrados,
+      novos: resultado.novos,
+      atualizados: resultado.atualizados,
+      sumiram: resultado.sumiram,
+      estrategia: resultado.estrategia,
+      leituraParcial: Boolean(resultado.leituraParcial),
+      mensagem: `${resultado.encontrados} produtos lidos pelo script — ${resultado.novos} novos, ${resultado.atualizados} atualizados.`
+    });
+    console.log(`\nGravado no banco: ${resultado.catalogo.length} itens.`);
   } catch (falha) {
     console.error(`\nNão deu para atualizar: ${falha.message}`);
     console.error('O catálogo que já estava salvo continua valendo.');
     process.exitCode = 1;
+  } finally {
+    await banco.encerrar().catch(() => {});
   }
 })();

@@ -66,10 +66,44 @@ function torradeira(mensagem, ruim = false) {
   relogioTorradeira = setTimeout(() => caixa.remove(), 3600);
 }
 
+/* ------------------------------------------------------------------ */
+/* Conversa com a API                                                  */
+/* ------------------------------------------------------------------ */
+
+// Vazio quando o próprio backend serve esta tela. Veja config.js.
+const BASE = String(window.API || '').replace(/\/$/, '');
+const CHAVE_TOKEN = 'espremedor_token';
+
+// O token vai no cabeçalho, não em cookie: assim o front funciona igual estando
+// no mesmo endereço da API ou hospedado à parte (GitHub Pages, Netlify).
+function lerToken() {
+  try {
+    return localStorage.getItem(CHAVE_TOKEN) || null;
+  } catch {
+    return null;
+  }
+}
+
+function guardarToken(token) {
+  try {
+    if (token) localStorage.setItem(CHAVE_TOKEN, token);
+    else localStorage.removeItem(CHAVE_TOKEN);
+  } catch {
+    /* navegador sem localStorage: a sessão dura só esta aba */
+  }
+}
+
+function cabecalhos() {
+  const saida = { 'Content-Type': 'application/json' };
+  const token = lerToken();
+  if (token) saida.Authorization = `Bearer ${token}`;
+  return saida;
+}
+
 async function api(caminho, opcoes = {}) {
-  const resposta = await fetch(caminho, {
-    headers: { 'Content-Type': 'application/json' },
+  const resposta = await fetch(BASE + caminho, {
     ...opcoes,
+    headers: cabecalhos(),
     body: opcoes.corpo ? JSON.stringify(opcoes.corpo) : undefined
   });
   let dados = {};
@@ -78,8 +112,29 @@ async function api(caminho, opcoes = {}) {
   } catch {
     /* resposta sem corpo */
   }
+  if (resposta.status === 401) guardarToken(null);
   if (!resposta.ok) throw new Error(dados.erro || `Falha na comunicação (${resposta.status}).`);
   return dados;
+}
+
+/** O CSV precisa do cabeçalho de autorização, então não dá para ser um link simples. */
+async function baixarCsv(rodadaId) {
+  const caminho = `/api/fechamento.csv${rodadaId ? `?rodada=${encodeURIComponent(rodadaId)}` : ''}`;
+  try {
+    const resposta = await fetch(BASE + caminho, { headers: cabecalhos() });
+    if (!resposta.ok) throw new Error(`Não deu para gerar a planilha (${resposta.status}).`);
+    const nomeNoCabecalho = (resposta.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/);
+    const endereco = URL.createObjectURL(await resposta.blob());
+    const link = document.createElement('a');
+    link.href = endereco;
+    link.download = nomeNoCabecalho ? nomeNoCabecalho[1] : 'lista.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(endereco);
+  } catch (falha) {
+    torradeira(falha.message, true);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -115,7 +170,8 @@ async function enviarEntrada() {
   botao.disabled = true;
   try {
     const rota = modoEntrada === 'criar' ? '/api/cadastro' : '/api/entrar';
-    await api(rota, { method: 'POST', corpo: { nome, senha } });
+    const conta = await api(rota, { method: 'POST', corpo: { nome, senha } });
+    guardarToken(conta.token);
     $('#campo-senha').value = '';
     await iniciar();
   } catch (falha) {
@@ -394,7 +450,7 @@ function desenharHistorico(rodadas) {
             <td class="num">${r.pessoas}</td>
             <td class="num">${r.caixas}</td>
             <td class="num">${dinheiro(r.total)}</td>
-            <td class="num"><a href="/api/fechamento.csv?rodada=${esc(r.id)}">planilha</a></td>
+            <td class="num"><a href="#" class="baixar-csv" data-rodada="${esc(r.id)}">planilha</a></td>
           </tr>`
           )
           .join('')}
@@ -716,7 +772,8 @@ $('#navegacao').addEventListener('click', (evento) => {
 });
 
 $('#botao-sair').addEventListener('click', async () => {
-  await api('/api/sair', { method: 'POST' });
+  await api('/api/sair', { method: 'POST' }).catch(() => {});
+  guardarToken(null);
   estado.usuario = null;
   estado.carrinho.clear();
   estado.pedido = null;
@@ -747,6 +804,15 @@ $('#botao-enviar').addEventListener('click', enviarPedido);
 $('#botao-cancelar').addEventListener('click', cancelarPedido);
 
 $('#botao-copiar').addEventListener('click', copiarLista);
+$('#link-csv').addEventListener('click', () => baixarCsv(null));
+
+$('#historico').addEventListener('click', (evento) => {
+  const link = evento.target.closest('.baixar-csv');
+  if (!link) return;
+  evento.preventDefault();
+  baixarCsv(link.dataset.rodada);
+});
+
 $('#botao-salvar-rodada').addEventListener('click', salvarRodada);
 $('#botao-fechar-rodada').addEventListener('click', fecharRodada);
 

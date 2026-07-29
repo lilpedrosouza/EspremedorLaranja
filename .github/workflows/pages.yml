@@ -1,0 +1,47 @@
+# Publica a pasta publico/ no GitHub Pages.
+#
+# Antes de usar: Settings → Pages → Source: "GitHub Actions".
+# E preencha publico/config.js com o endereço do backend na Railway, senão a
+# tela abre mas não acha a API.
+#
+# Se preferir deixar o próprio backend servir a tela (mais simples, um deploy
+# só), é só não ativar o Pages — este arquivo fica inerte.
+
+name: Publicar front no Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ['publico/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Avisar se o endereço da API não foi preenchido
+        run: |
+          if grep -q "^window.API = '';" publico/config.js; then
+            echo "::warning::publico/config.js está com window.API vazio. No Pages isso faz a tela procurar a API no próprio github.io, onde ela não existe. Preencha com o endereço do backend na Railway."
+          fi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: publico
+      - id: deploy
+        uses: actions/deploy-pages@v4

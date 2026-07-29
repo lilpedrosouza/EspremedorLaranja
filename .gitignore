@@ -1,5 +1,8 @@
-# Dados de uso: nomes, hashes de senha, sessões e pedidos de gente de verdade.
-# NUNCA versionar — o repositório é público.
+# Senha do banco e outras variáveis. NUNCA versionar.
+.env
+
+# Pasta do sistema antigo, quando os dados ficavam em arquivos JSON.
+# Guardava nomes, hashes de senha e sessões de gente de verdade.
 dados/
 
 # Sobras
