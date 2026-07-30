@@ -352,6 +352,14 @@ a { color: var(--casca); }
 .painel {
   position: sticky;
   top: 84px;
+  /* A coluna precisa caber na altura da janela. Sem esse limite ela ficava mais
+     alta que a tela depois que o Pix entrou — e um elemento sticky maior que a
+     viewport gruda pelo topo, deixando o fim (o QR e os dados de pagamento)
+     fora de alcance a não ser rolando a página toda. Com a altura limitada, o
+     que sobra rola aqui dentro e a coluna nunca sai da vista. */
+  max-height: calc(100dvh - 104px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--papel);
   border: 1px solid var(--linha);
   border-radius: var(--raio);
@@ -365,7 +373,9 @@ a { color: var(--casca); }
   font-weight: 700;
 }
 
-.itens-painel { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 10px; max-height: 44vh; overflow: auto; }
+/* Sem rolagem própria: quem rola agora é a coluna inteira. Duas áreas de
+   rolagem aninhadas fariam a roda do mouse parar no meio da lista. */
+.itens-painel { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 10px; }
 
 .itens-painel li { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 13px; }
 .itens-painel .nome-item { line-height: 1.25; }
@@ -435,7 +445,10 @@ a { color: var(--casca); }
   border: 1px solid var(--linha);
   border-radius: var(--raio);
   padding: 10px;
-  margin-bottom: 12px;
+  /* Menor que a largura da coluna: 210px já lê de sobra na câmera do celular e
+     sobra altura para a chave, o valor e os botões aparecerem junto. */
+  width: min(210px, 100%);
+  margin: 0 auto 12px;
 }
 
 .qr:empty { display: none; }
@@ -656,7 +669,13 @@ tr:last-child td { border-bottom: 0; }
 
 @media (max-width: 900px) {
   .colunas { grid-template-columns: minmax(0, 1fr); }
-  .painel { position: static; }
+  /* Numa coluna só, o painel volta a ser um bloco comum: prender a altura aqui
+     criaria uma rolagem dentro da outra. A página inteira rola normalmente. */
+  .painel {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
   .topo-interno { gap: 10px; }
   .marca span { display: none; }
 }

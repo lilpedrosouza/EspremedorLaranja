@@ -301,6 +301,7 @@ function desenharPainel() {
   }
 
   desenharPagamento();
+  pedirAjusteDoPainel();
 }
 
 /**
@@ -390,6 +391,40 @@ function formatarChavePix(chave) {
     return digitos.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
   }
   return chave;
+}
+
+/**
+ * Limita a altura da coluna "Seu pedido" ao espaço que sobra na tela.
+ *
+ * O CSS já tem um limite, mas ele só serve para quando a coluna está grudada no
+ * topo. Antes disso ela começa mais abaixo — e aí o mesmo limite deixa o fim
+ * dela (o QR e os botões de pagamento) passar do rodapé da janela. Como só o
+ * navegador sabe onde a coluna está a cada momento, a conta é feita aqui.
+ */
+function ajustarAlturaPainel() {
+  const painel = $('.painel');
+  if (!painel) return;
+
+  // Numa coluna só (celular) a página rola inteira; prender a altura atrapalha.
+  if (getComputedStyle(painel).position !== 'sticky') {
+    painel.style.maxHeight = '';
+    return;
+  }
+
+  const distanciaDoTopo = painel.getBoundingClientRect().top;
+  const sobra = window.innerHeight - distanciaDoTopo - 16;
+  // Um piso evita que a coluna vire uma fresta em janelas muito baixas.
+  painel.style.maxHeight = `${Math.max(260, Math.round(sobra))}px`;
+}
+
+let ajustePendente = false;
+function pedirAjusteDoPainel() {
+  if (ajustePendente) return;
+  ajustePendente = true;
+  requestAnimationFrame(() => {
+    ajustePendente = false;
+    ajustarAlturaPainel();
+  });
 }
 
 function desenharLoja() {
@@ -919,6 +954,9 @@ $('#grade-produtos').addEventListener('click', (evento) => {
 
 $('#botao-enviar').addEventListener('click', enviarPedido);
 $('#botao-cancelar').addEventListener('click', cancelarPedido);
+
+window.addEventListener('scroll', pedirAjusteDoPainel, { passive: true });
+window.addEventListener('resize', pedirAjusteDoPainel);
 
 $('#botao-paguei').addEventListener('click', async () => {
   const botao = $('#botao-paguei');
