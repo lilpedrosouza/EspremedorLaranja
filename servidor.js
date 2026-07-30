@@ -572,12 +572,51 @@ async function tratarApi(requisicao, resposta, url) {
 
   /* ---- pagamento ---- */
 
+  /**
+   * Minhas rodadas: o que pedi em cada uma e quanto ainda devo.
+   *
+   * Fechar a rodada não perdoa a dívida. Sem esta rota, quem não pagou perdia
+   * de vista o pedido e o Pix assim que o comprador fechava para adiantar a
+   * compra.
+   */
+  if (rota === '/api/minhas-rodadas' && metodo === 'GET') {
+    if (!exigeLogin()) return;
+    const pedidos = await banco.pedidosDoUsuario(usuario.id);
+    const lista = [];
+    for (const pedido of pedidos) {
+      const total = totalDoPedido(pedido);
+      lista.push({
+        ...pedido,
+        total,
+        // O Pix só faz sentido enquanto o comprador não confirmou o recebimento.
+        pix: pedido.confirmadoEm ? null : await pixParaPagar(total)
+      });
+    }
+    return responderJson(resposta, 200, {
+      rodadas: lista,
+      aPagar: lista.filter((p) => !p.confirmadoEm).reduce((s, p) => s + p.total, 0)
+    });
+  }
+
+  /** Pendências de rodadas já fechadas — a lista de cobrança do comprador. */
+  if (rota === '/api/pendencias' && metodo === 'GET') {
+    if (!exigeComprador()) return;
+    const pedidos = await banco.pendencias();
+    const lista = pedidos.map((p) => ({ ...p, total: totalDoPedido(p) }));
+    return responderJson(resposta, 200, {
+      pendencias: lista,
+      total: lista.reduce((s, p) => s + p.total, 0)
+    });
+  }
+
   if (rota === '/api/meu-pedido/pagamento' && metodo === 'POST') {
     if (!exigeLogin()) return;
     const corpo = await lerCorpo(requisicao);
-    const aberta = await banco.garantirRodadaAberta(criarRodada);
-    const pedido = await banco.marcarPago(aberta.id, usuario.id, corpo.pago !== false);
-    if (!pedido) return erro(resposta, 404, 'Envie seu pedido antes de marcar o pagamento.');
+    // Sem rodada no corpo, vale a aberta — é o caso de quem acabou de pedir.
+    const alvo = corpo.rodada ? await banco.rodadaPorId(String(corpo.rodada)) : await banco.garantirRodadaAberta(criarRodada);
+    if (!alvo) return erro(resposta, 404, 'Rodada não encontrada.');
+    const pedido = await banco.marcarPago(alvo.id, usuario.id, corpo.pago !== false);
+    if (!pedido) return erro(resposta, 404, 'Você não tem pedido nessa rodada.');
     return responderJson(resposta, 200, { pedido });
   }
 
@@ -585,9 +624,10 @@ async function tratarApi(requisicao, resposta, url) {
   if (casaPagamento && metodo === 'PATCH') {
     if (!exigeComprador()) return;
     const corpo = await lerCorpo(requisicao);
-    const aberta = await banco.garantirRodadaAberta(criarRodada);
-    const pedido = await banco.confirmarPagamento(aberta.id, casaPagamento[1], corpo.confirmado !== false);
-    if (!pedido) return erro(resposta, 404, 'Essa pessoa não tem pedido nesta rodada.');
+    const alvo = corpo.rodada ? await banco.rodadaPorId(String(corpo.rodada)) : await banco.garantirRodadaAberta(criarRodada);
+    if (!alvo) return erro(resposta, 404, 'Rodada não encontrada.');
+    const pedido = await banco.confirmarPagamento(alvo.id, casaPagamento[1], corpo.confirmado !== false);
+    if (!pedido) return erro(resposta, 404, 'Essa pessoa não tem pedido nessa rodada.');
     return responderJson(resposta, 200, { pedido });
   }
 

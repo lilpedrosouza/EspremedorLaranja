@@ -27,6 +27,7 @@ const estado = {
   carrinho: new Map(),
   pedido: null,
   pix: null,
+  anteriores: [],
   categoria: 'Todos',
   busca: '',
   buscaCatalogo: '',
@@ -301,6 +302,7 @@ function desenharPainel() {
   }
 
   desenharPagamento();
+  desenharAnteriores();
   pedirAjusteDoPainel();
 }
 
@@ -361,6 +363,70 @@ function desenharPagamento() {
     botao.textContent = 'Já paguei';
     esconderAviso();
   }
+}
+
+/**
+ * Rodadas já fechadas em que a pessoa pediu.
+ *
+ * Fechar a rodada não apaga a dívida: aqui ela vê o que pediu e, se ainda não
+ * pagou, o Pix daquela rodada continua à mão.
+ */
+function desenharAnteriores() {
+  const bloco = $('#bloco-anteriores');
+  const fechadas = estado.anteriores.filter((r) => !r.rodada.aberta);
+
+  if (!fechadas.length) {
+    bloco.classList.add('escondido');
+    return;
+  }
+  bloco.classList.remove('escondido');
+
+  const devendo = fechadas.filter((r) => !r.confirmadoEm);
+  const aPagar = devendo.reduce((s, r) => s + r.total, 0);
+  $('#resumo-anteriores').textContent = devendo.length
+    ? `Falta acertar ${dinheiro(aPagar)} em ${devendo.length} rodada${devendo.length > 1 ? 's' : ''}.`
+    : 'Tudo acertado. Aqui fica o histórico do que você pediu.';
+
+  $('#lista-anteriores').innerHTML = fechadas
+    .map((r) => {
+      const situacao = r.confirmadoEm
+        ? { classe: 'pago', texto: 'pago' }
+        : r.pagoEm
+          ? { classe: 'avisou', texto: 'aguardando confirmação' }
+          : { classe: 'devendo', texto: 'em aberto' };
+
+      return `
+        <details class="rodada-anterior ${situacao.classe}" data-rodada="${esc(r.rodada.id)}">
+          <summary>
+            <span class="nome-rodada-anterior">${esc(r.rodada.nome)}</span>
+            <span class="situacao">${situacao.texto}</span>
+            <b>${dinheiro(r.total)}</b>
+          </summary>
+          <ul class="itens-anteriores">
+            ${r.itens.map((i) => `<li>${i.quantidade}× ${esc(i.nome)} <span>${dinheiro(i.preco * i.quantidade)}</span></li>`).join('')}
+          </ul>
+          ${
+            r.confirmadoEm
+              ? `<p class="aviso-pagamento bom">Pagamento confirmado em ${quandoFoi(r.confirmadoEm)}.</p>`
+              : `
+            ${r.pix ? `<div class="qr">${r.pix.qrcode}</div>` : ''}
+            ${
+              r.pix
+                ? `<div class="pix-dados">
+                     <span class="pix-rotulo">Chave</span><code>${esc(formatarChavePix(r.pix.chave))}</code>
+                     <span class="pix-rotulo">Valor</span><b>${dinheiro(r.pix.valor)}</b>
+                   </div>
+                   <button type="button" class="botao claro largo" data-acao="copiar-pix">Copiar código Pix</button>`
+                : '<p class="aviso-pagamento neutro">O comprador ainda não cadastrou a chave Pix.</p>'
+            }
+            <button type="button" class="botao ${r.pagoEm ? 'claro' : 'verde'} largo" data-acao="paguei">
+              ${r.pagoEm ? 'Avisei que paguei — desfazer' : 'Já paguei'}
+            </button>
+            ${r.pagoEm ? `<p class="aviso-pagamento neutro">Avisado em ${quandoFoi(r.pagoEm)}. Falta o comprador confirmar.</p>` : ''}`
+          }
+        </details>`;
+    })
+    .join('');
 }
 
 function mostrarAviso(texto, tipo) {
@@ -485,6 +551,8 @@ async function carregarFechamento() {
     const dados = await api('/api/fechamento');
     fechamentoAtual = dados;
     desenharFechamento(dados);
+    const pendentes = await api('/api/pendencias');
+    desenharPendencias(pendentes.pendencias, pendentes.total);
     const historico = await api('/api/rodadas');
     desenharHistorico(historico.rodadas);
   } catch (falha) {
@@ -577,6 +645,43 @@ function desenharFechamento({ rodada, resumo }) {
         </label>
       </div>`;
     })
+    .join('');
+}
+
+/**
+ * Quem ficou devendo de rodadas já fechadas.
+ *
+ * Fechar a rodada para adiantar a compra não quer dizer que todo mundo pagou —
+ * sem esta lista a cobrança sumia da tela junto com a rodada.
+ */
+function desenharPendencias(pendencias, total) {
+  const bloco = $('#bloco-pendencias');
+  if (!pendencias.length) {
+    bloco.classList.add('escondido');
+    return;
+  }
+  bloco.classList.remove('escondido');
+
+  const pessoas = new Set(pendencias.map((p) => p.usuarioId)).size;
+  $('#resumo-pendencias').textContent =
+    `${dinheiro(total)} a receber de ${pessoas} pessoa${pessoas > 1 ? 's' : ''}, ` +
+    `em ${pendencias.length} pedido${pendencias.length > 1 ? 's' : ''} de rodadas já fechadas.`;
+
+  $('#lista-pendencias').innerHTML = pendencias
+    .map(
+      (p) => `
+      <div class="pessoa ${p.pagoEm ? 'avisou' : 'devendo'}" data-usuario="${esc(p.usuarioId)}" data-rodada="${esc(p.rodada.id)}">
+        <h3>${esc(p.nome)} <span class="situacao">${p.pagoEm ? 'avisou que pagou' : 'não pagou'}</span></h3>
+        <p class="quem">${esc(p.rodada.nome)} · fechada em ${quandoFoi(p.rodada.fechadaEm)}</p>
+        <ul>${p.itens.map((i) => `<li>${i.quantidade}× ${esc(i.nome)}</li>`).join('')}</ul>
+        <div class="total-pessoa">${dinheiro(p.total)}</div>
+        ${p.pagoEm ? `<p class="quem">Avisou em ${quandoFoi(p.pagoEm)}.</p>` : ''}
+        <label class="interruptor confirmar">
+          <input type="checkbox" data-acao="confirmar-pendencia">
+          <span>Recebi o dinheiro</span>
+        </label>
+      </div>`
+    )
     .join('');
 }
 
@@ -845,6 +950,16 @@ async function carregarProdutos() {
   desenharEstadoSincronia(dados.sincronizacao);
 }
 
+async function carregarAnteriores() {
+  try {
+    const dados = await api('/api/minhas-rodadas');
+    estado.anteriores = dados.rodadas;
+  } catch {
+    // Histórico é acessório: se falhar, a rodada aberta continua funcionando.
+    estado.anteriores = [];
+  }
+}
+
 async function carregarMeuPedido() {
   const dados = await api('/api/meu-pedido');
   estado.pedido = dados.pedido;
@@ -895,6 +1010,7 @@ async function iniciar() {
 
   await carregarProdutos();
   await carregarMeuPedido();
+  await carregarAnteriores();
   desenharLoja();
   trocarAba('loja');
 }
@@ -955,6 +1071,40 @@ $('#grade-produtos').addEventListener('click', (evento) => {
 $('#botao-enviar').addEventListener('click', enviarPedido);
 $('#botao-cancelar').addEventListener('click', cancelarPedido);
 
+$('#lista-anteriores').addEventListener('click', async (evento) => {
+  const botao = evento.target.closest('button[data-acao]');
+  if (!botao) return;
+  const caixa = botao.closest('.rodada-anterior');
+  const rodadaId = caixa.dataset.rodada;
+  const rodada = estado.anteriores.find((r) => r.rodada.id === rodadaId);
+  if (!rodada) return;
+
+  if (botao.dataset.acao === 'copiar-pix') {
+    try {
+      await navigator.clipboard.writeText(rodada.pix.brcode);
+      torradeira('Código Pix copiado. Cole no seu banco.');
+    } catch {
+      prompt('Copie o código Pix:', rodada.pix.brcode);
+    }
+    return;
+  }
+
+  botao.disabled = true;
+  try {
+    await api('/api/meu-pedido/pagamento', {
+      method: 'POST',
+      corpo: { pago: !rodada.pagoEm, rodada: rodadaId }
+    });
+    torradeira(rodada.pagoEm ? 'Aviso de pagamento desfeito.' : 'Avisado. O comprador vai confirmar.');
+    await carregarAnteriores();
+    desenharAnteriores();
+    pedirAjusteDoPainel();
+  } catch (falha) {
+    botao.disabled = false;
+    torradeira(falha.message, true);
+  }
+});
+
 window.addEventListener('scroll', pedirAjusteDoPainel, { passive: true });
 window.addEventListener('resize', pedirAjusteDoPainel);
 
@@ -995,6 +1145,25 @@ $('#lista-pessoas').addEventListener('change', async (evento) => {
     await api(`/api/pedidos/${cartao.dataset.usuario}/pagamento`, {
       method: 'PATCH',
       corpo: { confirmado: caixa.checked }
+    });
+    torradeira(caixa.checked ? 'Pagamento confirmado.' : 'Confirmação desfeita.');
+    await carregarFechamento();
+  } catch (falha) {
+    caixa.checked = !caixa.checked;
+    caixa.disabled = false;
+    torradeira(falha.message, true);
+  }
+});
+
+$('#lista-pendencias').addEventListener('change', async (evento) => {
+  const caixa = evento.target.closest('input[data-acao="confirmar-pendencia"]');
+  if (!caixa) return;
+  const cartao = caixa.closest('.pessoa');
+  caixa.disabled = true;
+  try {
+    await api(`/api/pedidos/${cartao.dataset.usuario}/pagamento`, {
+      method: 'PATCH',
+      corpo: { confirmado: caixa.checked, rodada: cartao.dataset.rodada }
     });
     torradeira(caixa.checked ? 'Pagamento confirmado.' : 'Confirmação desfeita.');
     await carregarFechamento();

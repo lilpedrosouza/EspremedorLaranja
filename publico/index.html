@@ -125,6 +125,13 @@
         </section>
 
         <button type="button" class="botao perigo largo escondido" id="botao-cancelar">Cancelar meu pedido</button>
+
+        <!-- ---------- rodadas anteriores da pessoa ---------- -->
+        <section class="anteriores escondido" id="bloco-anteriores" aria-label="Rodadas anteriores">
+          <h3>Rodadas anteriores</h3>
+          <p class="pagamento-dica" id="resumo-anteriores"></p>
+          <div id="lista-anteriores"></div>
+        </section>
       </aside>
     </div>
   </main>
@@ -155,6 +162,12 @@
       <h2>Quanto cada um deve</h2>
       <p class="subtitulo">Pra você acertar as contas depois da compra.</p>
       <div class="pessoas" id="lista-pessoas"></div>
+    </section>
+
+    <section class="bloco escondido" id="bloco-pendencias">
+      <h2>Ficou devendo de rodadas anteriores</h2>
+      <p class="subtitulo" id="resumo-pendencias"></p>
+      <div class="pessoas" id="lista-pendencias"></div>
     </section>
 
     <section class="bloco">

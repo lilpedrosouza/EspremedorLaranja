@@ -511,6 +511,59 @@ a { color: var(--casca); }
 
 .confirmar { margin-top: 10px; }
 
+/* ---------- rodadas anteriores da pessoa ---------- */
+
+.anteriores {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--linha);
+}
+
+.anteriores h3 {
+  margin: 0 0 2px;
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.rodada-anterior {
+  border: 1px solid var(--linha);
+  border-left-width: 3px;
+  border-radius: var(--raio);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.rodada-anterior.pago { border-left-color: var(--verde); }
+.rodada-anterior.avisou { border-left-color: var(--polpa); }
+.rodada-anterior.devendo { border-left-color: var(--alerta); }
+
+.rodada-anterior summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.rodada-anterior summary::marker { color: var(--tinta-fraca); }
+.nome-rodada-anterior { font-weight: 600; }
+.rodada-anterior summary b { margin-left: auto; font-family: var(--mono); }
+
+.itens-anteriores {
+  list-style: none;
+  margin: 10px 0;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--tinta-fraca);
+}
+
+.itens-anteriores li { display: flex; gap: 10px; }
+.itens-anteriores span { margin-left: auto; font-family: var(--mono); }
+
 /* ---------- fechamento ---------- */
 
 .numeros {

@@ -110,6 +110,14 @@ O Fechamento mostra a situação de cada um (*não pagou* · *avisou que pagou* 
 Mexeu no pedido depois de pagar? As duas marcações caem e o QR passa a valer o
 novo valor — senão alguém pagaria a conta errada.
 
+### Fechar a rodada não apaga a dívida
+
+Dá para fechar a rodada e adiantar a compra mesmo com gente devendo. Quem não
+pagou continua vendo, na coluna **Rodadas anteriores**, o que pediu e o QR
+daquela rodada, e pode pagar depois. O comprador acompanha em *Fechamento* →
+**Ficou devendo de rodadas anteriores**, que lista pessoa, rodada e valor até
+ele confirmar o recebimento.
+
 ### Configurar a chave
 
 ```bash
