@@ -511,6 +511,48 @@ a { color: var(--casca); }
 
 .confirmar { margin-top: 10px; }
 
+/* ---------- rastreio ---------- */
+
+.rastreio-rodada {
+  border: 1px solid var(--linha);
+  border-left: 3px solid var(--linha);
+  border-radius: var(--raio);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+
+.rastreio-rodada.com-codigo { border-left-color: var(--polpa); }
+
+.rastreio-cabeca {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.rastreio-cabeca b { font-family: var(--display); font-size: 15px; }
+
+.rastreio-codigo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 8px 0 4px;
+}
+
+.rastreio-codigo code {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  background: #f2f3f5;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.rastreio-rodada .linha-campos { margin-top: 12px; }
+
 /* ---------- rodadas anteriores da pessoa ---------- */
 
 .anteriores {

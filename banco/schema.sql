@@ -40,8 +40,15 @@ create table if not exists rodadas (
   aberta      boolean     not null default true,
   criada_em   timestamptz not null default now(),
   fechada_em  timestamptz,
-  fechada_por text
+  fechada_por text,
+  -- Código de rastreio da entrega, guardado sem a parte do endereço:
+  -- de https://ondeestameupedido.com.br/FR260730GKSEI fica só FR260730GKSEI.
+  rastreio    text,
+  rastreio_em timestamptz
 );
+
+alter table rodadas add column if not exists rastreio    text;
+alter table rodadas add column if not exists rastreio_em timestamptz;
 
 -- Só pode existir uma rodada aberta por vez. Sem isso, dois acessos ao mesmo
 -- tempo com o banco vazio criariam duas rodadas e os pedidos se espalhariam.

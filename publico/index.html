@@ -63,6 +63,7 @@
       </div>
       <nav class="navegacao" id="navegacao" aria-label="Seções">
         <button type="button" data-aba="loja" aria-current="true">Sabores</button>
+        <button type="button" data-aba="rastreio">Rastreio</button>
         <button type="button" data-aba="fechamento" class="so-comprador escondido">Fechamento</button>
         <button type="button" data-aba="catalogo" class="so-comprador escondido">Catálogo</button>
         <button type="button" data-aba="pessoas">Minha conta</button>
@@ -134,6 +135,20 @@
         </section>
       </aside>
     </div>
+  </main>
+
+  <!-- ---------- rastreio ---------- -->
+  <main class="pagina escondido" id="aba-rastreio">
+    <div class="faixa-rodada">
+      <div>
+        <h1>Rastreio</h1>
+        <p id="subtitulo-rastreio">Onde está a entrega de cada rodada.</p>
+      </div>
+    </div>
+
+    <section class="bloco">
+      <div id="lista-rastreio"></div>
+    </section>
   </main>
 
   <!-- ---------- fechamento ---------- -->

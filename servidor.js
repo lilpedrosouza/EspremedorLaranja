@@ -298,6 +298,51 @@ function csvDaRodada(rodada, resumo) {
   return `\uFEFF${linhas.join('\r\n')}\r\n`;
 }
 
+const SITE_RASTREIO = 'https://ondeestameupedido.com.br';
+
+/**
+ * Deixa só o código de rastreio.
+ *
+ * É comum colar a barra de endereços inteira em vez do código, então aceita as
+ * duas coisas: de "https://ondeestameupedido.com.br/FR260730GKSEI" sobra
+ * "FR260730GKSEI". Guardar a URL inteira faria o link virar
+ * ".../https://..." e não abrir.
+ */
+function limparCodigoRastreio(bruto) {
+  const texto = String(bruto || '').trim();
+  if (!texto) return null;
+
+  // Quando vem um endereço, o host precisa sair pelo caminho certo. Cortar na
+  // última barra na marra transformaria "ondeestameupedido.com.br/" (endereço
+  // sem código) no próprio domínio, e o link resultante não abriria nada.
+  let caminho = texto;
+  const pareceEndereco = /^[a-z][a-z0-9+.-]*:\/\//i.test(texto)
+    ? texto
+    : /^[\w-]+(\.[\w-]+)+\//.test(texto)
+      ? `https://${texto}`
+      : null;
+
+  if (pareceEndereco) {
+    try {
+      caminho = new URL(pareceEndereco).pathname;
+    } catch {
+      caminho = texto;
+    }
+  }
+
+  const ultimoPedaco = caminho.split(/[?#]/)[0].split('/').filter(Boolean).pop() || '';
+  const codigo = ultimoPedaco.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+
+  return codigo.length >= 4 && codigo.length <= 40 ? codigo : null;
+}
+
+function comLinkDeRastreio(rodada) {
+  return {
+    ...rodada,
+    rastreioUrl: rodada.rastreio ? `${SITE_RASTREIO}/${encodeURIComponent(rodada.rastreio)}` : null
+  };
+}
+
 /** Quanto a pessoa deve nesta rodada, a partir dos itens que ela pediu. */
 function totalDoPedido(pedido) {
   if (!pedido) return 0;
@@ -596,6 +641,49 @@ async function tratarApi(requisicao, resposta, url) {
       rodadas: lista,
       aPagar: lista.filter((p) => !p.confirmadoEm).reduce((s, p) => s + p.total, 0)
     });
+  }
+
+  /* ---- rastreio ---- */
+
+  /**
+   * A entrega de cada rodada. Todo mundo vê: quem pediu quer saber onde as
+   * cápsulas estão. Só o comprador escreve o código.
+   */
+  if (rota === '/api/rastreio' && metodo === 'GET') {
+    if (!exigeLogin()) return;
+    const rodadas = await banco.listarRodadas();
+    return responderJson(resposta, 200, {
+      site: SITE_RASTREIO,
+      podeEditar: eComprador,
+      rodadas: rodadas.map((r) =>
+        comLinkDeRastreio({
+          id: r.id,
+          nome: r.nome,
+          aberta: r.aberta,
+          criadaEm: r.criadaEm,
+          fechadaEm: r.fechadaEm,
+          rastreio: r.rastreio,
+          rastreioEm: r.rastreioEm
+        })
+      )
+    });
+  }
+
+  const casaRastreio = rota.match(/^\/api\/rodadas\/([\w-]+)\/rastreio$/);
+  if (casaRastreio && metodo === 'PUT') {
+    if (!exigeComprador()) return;
+    const corpo = await lerCorpo(requisicao);
+    const bruto = String(corpo.rastreio || '').trim();
+
+    // Campo vazio apaga o código; qualquer outra coisa precisa virar um código.
+    const codigo = bruto ? limparCodigoRastreio(bruto) : null;
+    if (bruto && !codigo) {
+      return erro(resposta, 400, 'Não reconheci um código aí. Cole o código ou o endereço inteiro do rastreio.');
+    }
+
+    const rodada = await banco.gravarRastreio(casaRastreio[1], codigo);
+    if (!rodada) return erro(resposta, 404, 'Rodada não encontrada.');
+    return responderJson(resposta, 200, { rodada: comLinkDeRastreio(rodada) });
   }
 
   /** Pendências de rodadas já fechadas — a lista de cobrança do comprador. */

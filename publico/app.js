@@ -192,9 +192,10 @@ function trocarAba(aba) {
   for (const botao of $$('#navegacao button')) {
     botao.setAttribute('aria-current', String(botao.dataset.aba === aba));
   }
-  for (const nome of ['loja', 'fechamento', 'catalogo', 'pessoas']) {
+  for (const nome of ['loja', 'rastreio', 'fechamento', 'catalogo', 'pessoas']) {
     $(`#aba-${nome}`).classList.toggle('escondido', nome !== aba);
   }
+  if (aba === 'rastreio') carregarRastreio();
   if (aba === 'fechamento') carregarFechamento();
   if (aba === 'catalogo') desenharCatalogo();
   if (aba === 'pessoas') carregarPessoas();
@@ -538,6 +539,71 @@ async function cancelarPedido() {
   } catch (falha) {
     torradeira(falha.message, true);
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Rastreio                                                            */
+/* ------------------------------------------------------------------ */
+
+let rastreioAtual = null;
+
+async function carregarRastreio() {
+  try {
+    rastreioAtual = await api('/api/rastreio');
+    desenharRastreio(rastreioAtual);
+  } catch (falha) {
+    $('#lista-rastreio').innerHTML = `<p class="vazio">${esc(falha.message)}</p>`;
+  }
+}
+
+function desenharRastreio({ rodadas, podeEditar, site }) {
+  $('#subtitulo-rastreio').textContent = podeEditar
+    ? `Cole aqui o código que o ${new URL(site).host} te dá depois da compra.`
+    : 'Onde está a entrega de cada rodada.';
+
+  if (!rodadas.length) {
+    $('#lista-rastreio').innerHTML = '<p class="vazio">Nenhuma rodada ainda.</p>';
+    return;
+  }
+
+  $('#lista-rastreio').innerHTML = rodadas
+    .map(
+      (r) => `
+      <div class="rastreio-rodada ${r.rastreio ? 'com-codigo' : ''}" data-rodada="${esc(r.id)}">
+        <div class="rastreio-cabeca">
+          <b>${esc(r.nome)}</b>
+          <span class="situacao">${r.aberta ? 'aberta' : `fechada em ${quandoFoi(r.fechadaEm)}`}</span>
+        </div>
+
+        ${
+          r.rastreio
+            ? `<p class="rastreio-codigo">
+                 <code>${esc(r.rastreio)}</code>
+                 <a class="botao claro miudo" href="${esc(r.rastreioUrl)}" target="_blank" rel="noopener noreferrer">Acompanhar</a>
+               </p>
+               <p class="quem">Anotado em ${quandoFoi(r.rastreioEm)}.</p>`
+            : `<p class="quem">${
+                r.aberta
+                  ? 'A rodada ainda está aberta — o código aparece depois da compra.'
+                  : 'Sem código de rastreio ainda.'
+              }</p>`
+        }
+
+        ${
+          podeEditar
+            ? `<div class="linha-campos">
+                 <div class="campo">
+                   <label for="rastreio-${esc(r.id)}">Código ou endereço do rastreio</label>
+                   <input id="rastreio-${esc(r.id)}" data-campo="rastreio" value="${esc(r.rastreio || '')}" placeholder="FR260730GKSEI">
+                 </div>
+                 <button type="button" class="botao claro" data-acao="salvar-rastreio">Salvar</button>
+                 ${r.rastreio ? '<button type="button" class="botao perigo" data-acao="limpar-rastreio">Tirar</button>' : ''}
+               </div>`
+            : ''
+        }
+      </div>`
+    )
+    .join('');
 }
 
 /* ------------------------------------------------------------------ */
@@ -1153,6 +1219,35 @@ $('#lista-pessoas').addEventListener('change', async (evento) => {
     caixa.disabled = false;
     torradeira(falha.message, true);
   }
+});
+
+$('#lista-rastreio').addEventListener('click', async (evento) => {
+  const botao = evento.target.closest('button[data-acao]');
+  if (!botao) return;
+  const caixa = botao.closest('.rastreio-rodada');
+  const limpando = botao.dataset.acao === 'limpar-rastreio';
+  const campo = caixa.querySelector('input[data-campo="rastreio"]');
+
+  botao.disabled = true;
+  try {
+    await api(`/api/rodadas/${caixa.dataset.rodada}/rastreio`, {
+      method: 'PUT',
+      corpo: { rastreio: limpando ? '' : campo.value }
+    });
+    torradeira(limpando ? 'Código removido.' : 'Código de rastreio salvo.');
+    await carregarRastreio();
+  } catch (falha) {
+    botao.disabled = false;
+    torradeira(falha.message, true);
+  }
+});
+
+$('#lista-rastreio').addEventListener('keydown', (evento) => {
+  if (evento.key !== 'Enter') return;
+  const campo = evento.target.closest('input[data-campo="rastreio"]');
+  if (!campo) return;
+  evento.preventDefault();
+  campo.closest('.rastreio-rodada').querySelector('button[data-acao="salvar-rastreio"]').click();
 });
 
 $('#lista-pendencias').addEventListener('change', async (evento) => {

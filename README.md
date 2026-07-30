@@ -136,6 +136,22 @@ logado no sistema.
 Sem chave configurada nada quebra: a tela avisa para combinar o pagamento com o
 comprador, e o resto segue funcionando.
 
+## Rastreio da entrega
+
+A aba **Rastreio** mostra uma linha por rodada com o código da entrega e um
+botão que abre o acompanhamento em `ondeestameupedido.com.br`.
+
+Quem escreve o código é o comprador, depois da compra. Todo mundo vê — quem
+pediu tem interesse em saber onde as cápsulas estão.
+
+Dá para colar **só o código** (`FR260730GKSEI`) ou **o endereço inteiro**
+(`https://ondeestameupedido.com.br/FR260730GKSEI`): o sistema fica só com o
+código nos dois casos, porque guardar a URL inteira faria o link virar
+`.../https://...` e não abrir. Deixar o campo vazio e salvar tira o código.
+
+O código fica preso à rodada: fechar a rodada não o apaga, e a rodada nova
+começa sem código.
+
 ## Segurança — leia antes de divulgar o link
 
 **O cadastro é aberto.** Qualquer pessoa com o endereço pode criar um acesso e
