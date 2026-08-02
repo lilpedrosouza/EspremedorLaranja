@@ -152,6 +152,48 @@ código nos dois casos, porque guardar a URL inteira faria o link virar
 O código fica preso à rodada: fechar a rodada não o apaga, e a rodada nova
 começa sem código.
 
+## Preço: está caro ou barato?
+
+Toda vez que o servidor lê o site da Nescafé, ele guarda o preço de quem mudou.
+Com isso cada sabor passa a ter um preço *normal*, e a tela consegue dizer se o
+de hoje foge dele.
+
+Na tela de sabores, o cartão ganha um selo — *12% abaixo da média*, *5% acima da
+média* ou *no preço de sempre* — e um botão **histórico**, que abre o gráfico com
+cada mudança de preço e o dia em que ela aconteceu. A linha tracejada é a média,
+e abaixo do gráfico há a mesma informação em tabela.
+
+O gráfico é feito em degraus de propósito: preço não sobe aos poucos entre uma
+leitura e outra, ele fica parado e pula de uma vez.
+
+### A média é ponderada pelo tempo
+
+Um sabor que passou cinco meses a R$ 25 e dois dias em promoção a R$ 18 tem preço
+normal de ~R$ 24,90, e não de R$ 21,50. A média simples contaria a promoção de
+dois dias como se fosse metade do semestre, e aí quase todo dia pareceria caro.
+
+### Melhor dia para comprar
+
+No **Fechamento** aparece o bloco *Quando comprar*, com duas coisas:
+
+- **o momento**: se a lista desta rodada está acima ou abaixo do que ela costuma
+  custar — a resposta prática para "fecho agora ou espero?";
+- **o dia da semana** que costuma sair mais barato, com a régua dos sete dias
+  para você conferir a diferença entre eles.
+
+Cada sabor entra pela variação em relação à média dele mesmo, e não em reais:
+senão as cápsulas caras decidiriam a resposta sozinhas, só por serem caras.
+
+**Enquanto não houver dado, a tela diz que não sabe.** São necessárias umas três
+semanas de histórico e algumas mudanças de preço antes de apontar um dia; e se os
+sete dias saírem praticamente iguais, ela diz isso também, em vez de eleger um
+vencedor no ruído. É de propósito: um "melhor dia" tirado de duas semanas de
+dados seria um palpite com cara de conclusão.
+
+O histórico começa a ser gravado a partir da instalação desta versão — não há
+como recuperar preço de antes. Nos primeiros dias, portanto, é normal a tela
+mostrar tudo como "sem histórico ainda". A análise olha os últimos 180 dias.
+
 ## Segurança — leia antes de divulgar o link
 
 **O cadastro é aberto.** Qualquer pessoa com o endereço pode criar um acesso e
@@ -233,6 +275,7 @@ servidor.js                    servidor HTTP e regras
 banco/schema.sql               estrutura das tabelas (roda sozinho ao subir)
 lib/banco.js                   o único lugar que fala SQL
 lib/catalogo-nescafe.js        leitura do site da Nescafé
+lib/precos.js                  média, "está caro?" e melhor dia da semana
 lib/pix.js                     monta o BR Code do Pix (copia e cola / QR)
 lib/ambiente.js                lê o .env quando você roda local
 scripts/atualizar-produtos.js  atualização do catálogo pelo terminal

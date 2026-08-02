@@ -77,6 +77,26 @@ create table if not exists pedidos (
 alter table pedidos add column if not exists pago_em       timestamptz;
 alter table pedidos add column if not exists confirmado_em timestamptz;
 
+-- Histórico de preços: uma linha por vez que o preço de um produto mudou.
+-- É o que permite dizer se o preço de hoje está acima ou abaixo do normal e
+-- qual dia da semana costuma sair mais barato.
+--
+-- Só grava quando o valor muda, e não a cada leitura do site (que acontece de
+-- 12 em 12 horas): guardar toda leitura encheria a tabela de linhas repetidas
+-- sem acrescentar informação nenhuma. Cada linha vale do momento em que foi
+-- gravada até a linha seguinte — quem lê reconstrói o preço de qualquer dia.
+create table if not exists precos (
+  id            bigserial     primary key,
+  produto_id    text          not null references produtos(id) on delete cascade,
+  preco         numeric(10,2) not null,
+  registrado_em timestamptz   not null default now()
+);
+
+-- A consulta é sempre "os pontos deste produto, em ordem de tempo", e a de
+-- todos os produtos filtra por data. As duas cabem neste índice.
+create index if not exists precos_por_produto on precos (produto_id, registrado_em);
+create index if not exists precos_por_data     on precos (registrado_em);
+
 -- Configuração da roda: hoje guarda a chave Pix de quem recebe.
 -- Fica no banco, e não no código, porque chave Pix costuma ser CPF — dado
 -- pessoal que não deve entrar num repositório público.

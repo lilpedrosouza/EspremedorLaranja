@@ -53,6 +53,21 @@ function quandoFoi(iso) {
   return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+/** 12/03 — para os eixos do gráfico, onde o espaço é curto. */
+function diaCurto(quando) {
+  return new Date(quando).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+}
+
+/** 12 de março de 2026 — para a tabela e a dica, onde cabe por extenso. */
+function diaLongo(quando) {
+  return new Date(quando).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+}
+
+/** Recebe a fração (0,073) e devolve o que se lê (7,3%). */
+function porcento(fracao) {
+  return `${(Math.abs(Number(fracao) || 0) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
+}
+
 let relogioTorradeira;
 function torradeira(mensagem, ruim = false) {
   clearTimeout(relogioTorradeira);
@@ -227,6 +242,24 @@ function desenharFichas() {
     .join('');
 }
 
+/**
+ * O selo de preço do cartão.
+ *
+ * O texto diz tudo sozinho ("12% abaixo da média") e a cor só reforça: quem não
+ * distingue verde de laranja precisa receber a mesma informação. Sem histórico
+ * suficiente o selo não aparece — dizer "no preço de sempre" no primeiro dia
+ * seria afirmar algo que ninguém conferiu.
+ */
+function seloDePreco(analise) {
+  if (!analise || analise.situacao === 'sem-dados') return '';
+  if (analise.situacao === 'media') {
+    return `<span class="selo-preco media" title="Média dos últimos ${analise.dias} dias: ${dinheiro(analise.media)}">no preço de sempre</span>`;
+  }
+  const abaixo = analise.situacao === 'abaixo';
+  return `<span class="selo-preco ${abaixo ? 'abaixo' : 'acima'}" title="Média dos últimos ${analise.dias} dias: ${dinheiro(analise.media)}">
+    <span aria-hidden="true">${abaixo ? '↓' : '↑'}</span> ${porcento(analise.percentual)} ${abaixo ? 'abaixo' : 'acima'} da média</span>`;
+}
+
 function desenharGrade() {
   const lista = produtosVisiveis();
   $('#sem-resultado').classList.toggle('escondido', lista.length > 0);
@@ -256,10 +289,258 @@ function desenharGrade() {
                 <button type="button" data-acao="mais" aria-label="Somar uma caixa de ${esc(produto.nome)}" ${indisponivel ? 'disabled' : ''}>+</button>
               </span>
             </div>
+            <div class="linha-analise">
+              ${seloDePreco(produto.analise)}
+              <button type="button" class="botao-historico" data-acao="historico" aria-label="Ver o histórico de preço de ${esc(produto.nome)}">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 12.5 6 7.5l3 2.5 5-6.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                histórico
+              </button>
+            </div>
           </div>
         </article>`;
     })
     .join('');
+}
+
+/* ------------------------------------------------------------------ */
+/* Histórico de preço                                                  */
+/* ------------------------------------------------------------------ */
+
+const DIA_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Medidas do gráfico no sistema do viewBox — o SVG se estica para a largura que
+ * tiver. A margem de baixo guarda a faixa das datas e a da direita, o preço de
+ * hoje na ponta da linha: sem esse espaço reservado os dois saem cortados.
+ */
+const GRAFICO = { largura: 720, altura: 300, topo: 24, direita: 82, baixo: 42, esquerda: 76 };
+
+/** As contas de escala, compartilhadas pelo desenho e pela dica do cursor. */
+function escalaDoGrafico(pontos, precoAtual, media) {
+  const serie = pontos.map((ponto) => ({ t: new Date(ponto.em).getTime(), v: ponto.preco }));
+  const inicio = serie[0].t;
+  const agora = Date.now();
+  // Um ponto só deixaria o eixo do tempo sem largura nenhuma, e a divisão daria
+  // infinito. Um dia de folga resolve.
+  const fim = agora > inicio + 60000 ? agora : inicio + DIA_MS;
+
+  const valores = [...serie.map((ponto) => ponto.v), Number(precoAtual) || serie[0].v];
+  if (media) valores.push(media);
+
+  let menor = Math.min(...valores);
+  let maior = Math.max(...valores);
+  if (maior - menor < 0.01) {
+    // Preço que nunca mudou: sem abrir a faixa ela teria altura zero e a linha
+    // ficaria colada na borda de cima do quadro.
+    const folga = Math.max(maior * 0.05, 0.5);
+    menor -= folga;
+    maior += folga;
+  } else {
+    const folga = (maior - menor) * 0.12;
+    menor -= folga;
+    maior += folga;
+  }
+
+  const areaL = GRAFICO.largura - GRAFICO.esquerda - GRAFICO.direita;
+  const areaA = GRAFICO.altura - GRAFICO.topo - GRAFICO.baixo;
+
+  return {
+    serie,
+    inicio,
+    fim,
+    areaL,
+    areaA,
+    menor,
+    maior,
+    x: (t) => GRAFICO.esquerda + ((t - inicio) / (fim - inicio)) * areaL,
+    y: (v) => GRAFICO.topo + ((maior - v) / (maior - menor)) * areaA
+  };
+}
+
+/**
+ * A linha do preço no tempo, em degraus.
+ *
+ * Degrau e não reta: o preço não sobe aos poucos entre uma leitura e outra — ele
+ * fica parado e pula de uma vez. Uma reta ligando os pontos desenharia uma
+ * transição gradual que nunca aconteceu.
+ */
+function svgDoHistorico(pontos, precoAtual, analise) {
+  const e = escalaDoGrafico(pontos, precoAtual, analise.media);
+  const base = GRAFICO.topo + e.areaA;
+  const direita = GRAFICO.esquerda + e.areaL;
+  const ultimo = e.serie[e.serie.length - 1];
+
+  let linha = `M ${e.x(e.serie[0].t).toFixed(1)} ${e.y(e.serie[0].v).toFixed(1)}`;
+  for (let i = 1; i < e.serie.length; i += 1) {
+    const px = e.x(e.serie[i].t).toFixed(1);
+    linha += ` L ${px} ${e.y(e.serie[i - 1].v).toFixed(1)} L ${px} ${e.y(e.serie[i].v).toFixed(1)}`;
+  }
+  linha += ` L ${direita.toFixed(1)} ${e.y(ultimo.v).toFixed(1)}`;
+
+  const grades = [0, 1, 2, 3].map((passo) => {
+    const valor = e.menor + ((e.maior - e.menor) * passo) / 3;
+    const py = e.y(valor).toFixed(1);
+    return `<line class="grade" x1="${GRAFICO.esquerda}" y1="${py}" x2="${direita}" y2="${py}"></line>
+            <text class="rotulo-eixo" x="${GRAFICO.esquerda - 10}" y="${py}" text-anchor="end" dominant-baseline="middle">${dinheiro(valor)}</text>`;
+  });
+
+  const datas = [0, 1, 2, 3].map((passo) => {
+    const quando = e.inicio + ((e.fim - e.inicio) * passo) / 3;
+    const ancora = passo === 0 ? 'start' : passo === 3 ? 'end' : 'middle';
+    return `<text class="rotulo-eixo" x="${e.x(quando).toFixed(1)}" y="${base + 22}" text-anchor="${ancora}">${diaCurto(quando)}</text>`;
+  });
+
+  // A média é uma referência, não uma grade — por isso ela é a única linha
+  // tracejada do desenho.
+  //
+  // O rótulo fica à esquerda, dentro do quadro, e não na ponta direita junto do
+  // preço de hoje: quando o preço atual está perto da média, os dois textos
+  // cairiam um em cima do outro justamente no caso mais comum.
+  const mediaDesenhada = analise.media
+    ? `<line class="linha-media" x1="${GRAFICO.esquerda}" y1="${e.y(analise.media).toFixed(1)}" x2="${direita}" y2="${e.y(analise.media).toFixed(1)}"></line>
+       <text class="rotulo-media" x="${GRAFICO.esquerda + 6}" y="${(e.y(analise.media) - 7).toFixed(1)}">média ${dinheiro(analise.media)}</text>`
+    : '';
+
+  const marcadores = e.serie
+    .map((ponto) => `<circle class="ponto" cx="${e.x(ponto.t).toFixed(1)}" cy="${e.y(ponto.v).toFixed(1)}" r="4"></circle>`)
+    .join('');
+
+  return `
+    <svg viewBox="0 0 ${GRAFICO.largura} ${GRAFICO.altura}" class="grafico-precos" role="img"
+         aria-label="Preço de hoje ${dinheiro(precoAtual)}${analise.media ? `, média ${dinheiro(analise.media)}` : ''}. Os mesmos valores estão na tabela abaixo do gráfico.">
+      ${grades.join('')}
+      <path class="area" d="${linha} L ${direita.toFixed(1)} ${base} L ${e.x(e.serie[0].t).toFixed(1)} ${base} Z"></path>
+      ${mediaDesenhada}
+      <path class="linha" d="${linha}"></path>
+      ${marcadores}
+      <circle class="ponto atual" cx="${direita.toFixed(1)}" cy="${e.y(ultimo.v).toFixed(1)}" r="4.5"></circle>
+      <text class="rotulo-ponta" x="${direita + 8}" y="${e.y(ultimo.v).toFixed(1)}" dominant-baseline="middle">${dinheiro(precoAtual)}</text>
+      <line class="cursor escondido" id="cursor-grafico" y1="${GRAFICO.topo}" y2="${base}"></line>
+      <rect id="area-grafico" x="${GRAFICO.esquerda}" y="${GRAFICO.topo}" width="${e.areaL}" height="${e.areaA}" fill="transparent"></rect>
+    </svg>`;
+}
+
+function tabelaDoHistorico(pontos, analise) {
+  const linhas = [...pontos]
+    .reverse()
+    .map((ponto) => {
+      const diferenca = analise.media ? (ponto.preco - analise.media) / analise.media : null;
+      return `<tr>
+        <td>${diaLongo(ponto.em)}</td>
+        <td class="num">${dinheiro(ponto.preco)}</td>
+        <td class="num">${diferenca === null ? '—' : `${diferenca < 0 ? '−' : '+'}${porcento(Math.abs(diferenca))}`}</td>
+      </tr>`;
+    })
+    .join('');
+
+  return `<table>
+      <thead><tr><th>Quando mudou</th><th class="num">Preço</th><th class="num">vs. média</th></tr></thead>
+      <tbody>${linhas}</tbody>
+    </table>`;
+}
+
+/**
+ * A dica que segue o cursor. Mostra o preço que estava valendo naquele ponto do
+ * tempo — e não o ponto mais próximo, porque preço é degrau: entre 3 e 17 de
+ * julho vale o que foi gravado no dia 3, mesmo que o dia 17 esteja mais perto.
+ */
+function ligarDicaDoGrafico(pontos, precoAtual, media) {
+  const figura = $('#grafico-precos');
+  if (!figura) return;
+
+  const svg = $('svg', figura);
+  const alvo = $('#area-grafico', figura);
+  const cursor = $('#cursor-grafico', figura);
+  const dica = $('#dica-grafico');
+  if (!svg || !alvo) return;
+
+  const e = escalaDoGrafico(pontos, precoAtual, media);
+
+  function mostrar(evento) {
+    const caixa = svg.getBoundingClientRect();
+    if (!caixa.width) return;
+    // De pixel da tela para o sistema do viewBox: o SVG escala junto com a
+    // largura da janela, então a conta não pode assumir 1 unidade = 1 pixel.
+    const posicao = ((evento.clientX - caixa.left) / caixa.width) * GRAFICO.largura;
+
+    let indice = 0;
+    for (let i = 0; i < e.serie.length; i += 1) {
+      if (e.x(e.serie[i].t) <= posicao) indice = i;
+    }
+    const ponto = e.serie[indice];
+    const diferenca = media ? (ponto.v - media) / media : null;
+
+    cursor.setAttribute('x1', posicao.toFixed(1));
+    cursor.setAttribute('x2', posicao.toFixed(1));
+    cursor.classList.remove('escondido');
+
+    dica.innerHTML = `<b>${dinheiro(ponto.v)}</b><span>desde ${diaLongo(ponto.t)}</span>${
+      diferenca === null ? '' : `<span>${diferenca < 0 ? '−' : '+'}${porcento(Math.abs(diferenca))} vs. média</span>`
+    }`;
+    dica.style.left = `${Math.min(92, Math.max(8, (posicao / GRAFICO.largura) * 100))}%`;
+    dica.classList.remove('escondido');
+  }
+
+  function esconder() {
+    cursor.classList.add('escondido');
+    dica.classList.add('escondido');
+  }
+
+  alvo.addEventListener('pointermove', mostrar);
+  alvo.addEventListener('pointerdown', mostrar);
+  alvo.addEventListener('pointerleave', esconder);
+}
+
+async function abrirHistoricoDePreco(produtoId) {
+  const janela = $('#janela-historico');
+  $('#titulo-historico').textContent = 'Histórico de preço';
+  $('#subtitulo-historico').textContent = 'Buscando…';
+  $('#conteudo-historico').innerHTML = '';
+  if (!janela.open) janela.showModal();
+
+  try {
+    desenharHistoricoDePreco(await api(`/api/produtos/${encodeURIComponent(produtoId)}/historico`));
+  } catch (falha) {
+    $('#subtitulo-historico').textContent = '';
+    $('#conteudo-historico').innerHTML = `<p class="vazio">${esc(falha.message)}</p>`;
+  }
+}
+
+function desenharHistoricoDePreco({ produto, pontos, analise, janelaDias }) {
+  $('#titulo-historico').textContent = produto.nome;
+  $('#subtitulo-historico').textContent =
+    analise.situacao === 'sem-dados'
+      ? `Hoje: ${dinheiro(produto.preco)}.`
+      : `Hoje ${dinheiro(produto.preco)} · média de ${analise.dias} dias ${dinheiro(analise.media)} · variou entre ${dinheiro(analise.minimo)} e ${dinheiro(analise.maximo)}.`;
+
+  if (!pontos.length) {
+    $('#conteudo-historico').innerHTML =
+      '<p class="vazio">Ainda não guardamos preço deste sabor. O histórico começa na próxima leitura do site, que acontece de 12 em 12 horas.</p>';
+    return;
+  }
+
+  const veredito =
+    analise.situacao === 'sem-dados'
+      ? `<p class="veredito neutro"><span aria-hidden="true">•</span> São ${analise.dias} dia(s) de histórico — ainda é cedo pra dizer se está caro ou barato.</p>`
+      : analise.situacao === 'media'
+        ? '<p class="veredito neutro"><span aria-hidden="true">=</span> Está no preço de sempre.</p>'
+        : `<p class="veredito ${analise.situacao}"><span aria-hidden="true">${analise.situacao === 'abaixo' ? '↓' : '↑'}</span> Está ${porcento(Math.abs(analise.percentual))} ${
+            analise.situacao === 'abaixo' ? 'abaixo' : 'acima'
+          } da média — ${dinheiro(Math.abs(analise.diferenca))} ${analise.situacao === 'abaixo' ? 'a menos' : 'a mais'} por caixa.</p>`;
+
+  $('#conteudo-historico').innerHTML = `
+    ${veredito}
+    <figure class="grafico" id="grafico-precos">
+      ${svgDoHistorico(pontos, produto.preco, analise)}
+      <div class="dica-grafico escondido" id="dica-grafico" role="status"></div>
+    </figure>
+    <p class="legenda-grafico">Cada degrau é uma mudança de preço; a linha tracejada é a média dos últimos ${janelaDias} dias. A escala começa perto do menor preço, e não no zero.</p>
+    <details class="tabela-historico">
+      <summary>Ver os valores em tabela</summary>
+      ${tabelaDoHistorico(pontos, analise)}
+    </details>`;
+
+  ligarDicaDoGrafico(pontos, produto.preco, analise.media);
 }
 
 function desenharPainel() {
@@ -621,9 +902,84 @@ async function carregarFechamento() {
     desenharPendencias(pendentes.pendencias, pendentes.total);
     const historico = await api('/api/rodadas');
     desenharHistorico(historico.rodadas);
+    await carregarMelhorDia();
   } catch (falha) {
     torradeira(falha.message, true);
   }
+}
+
+async function carregarMelhorDia() {
+  try {
+    desenharMelhorDia(await api('/api/melhor-dia'));
+  } catch (falha) {
+    // Análise de preço é acessório: se falhar, o fechamento continua servindo.
+    $('#conteudo-melhor-dia').innerHTML = `<p class="vazio">${esc(falha.message)}</p>`;
+  }
+}
+
+/**
+ * A régua dos sete dias.
+ *
+ * Cada barra sai do meio: para a esquerda quando o dia costuma sair mais barato
+ * que a média, para a direita quando sai mais caro. O número fica em preto ao
+ * lado — a cor da barra reforça, mas não é o único jeito de ler.
+ */
+function reguaDosDias(semana) {
+  const maior = Math.max(...semana.dias.map((dia) => Math.abs(dia.percentual || 0)), 0.001);
+
+  const linhas = semana.dias
+    .map((dia) => {
+      const valor = dia.percentual || 0;
+      const largura = ((Math.abs(valor) / maior) * 50).toFixed(1);
+      const eMelhor = semana.melhor && semana.melhor.dia === dia.dia;
+      return `
+        <div class="dia-semana ${eMelhor ? 'melhor' : ''}">
+          <span class="dia-nome">${esc(dia.nome)}${eMelhor ? '<span class="etiqueta">melhor</span>' : ''}</span>
+          <span class="dia-trilho"><i class="${valor < 0 ? 'abaixo' : 'acima'}" style="width:${largura}%"></i></span>
+          <span class="dia-valor">${valor < 0 ? '−' : '+'}${porcento(valor)}</span>
+        </div>`;
+    })
+    .join('');
+
+  return `<div class="dias-semana">${linhas}</div>`;
+}
+
+function desenharMelhorDia({ semana, momento, janelaDias }) {
+  const partes = [];
+
+  // Primeiro o que dá pra fazer hoje: a lista desta rodada está cara ou barata?
+  if (momento.suficiente) {
+    const sinal = momento.situacao === 'media' ? '=' : momento.situacao === 'abaixo' ? '↓' : '↑';
+    const conselho =
+      momento.situacao === 'abaixo'
+        ? ' Bom momento pra fechar a compra.'
+        : momento.situacao === 'acima'
+          ? ' Se der pra esperar, costuma ficar mais em conta.'
+          : '';
+    const texto =
+      momento.situacao === 'media'
+        ? `A lista desta rodada está no preço de sempre: ${dinheiro(momento.total)}.`
+        : `A lista desta rodada está <b>${porcento(momento.percentual)} ${momento.situacao === 'abaixo' ? 'abaixo' : 'acima'}</b> do que ela costuma custar — ${dinheiro(momento.total)} contra ${dinheiro(momento.totalMedio)} na média.`;
+    partes.push(`<p class="veredito ${esc(momento.situacao)}"><span aria-hidden="true">${sinal}</span> ${texto}${conselho}</p>`);
+  }
+
+  // Depois o dia da semana. Sem base, diz que não sabe — e mostra o que falta.
+  if (!semana.suficiente || !semana.melhor) {
+    partes.push(`<p class="vazio">${esc(semana.motivo)}</p>`);
+    if (semana.produtos) {
+      partes.push(
+        `<p class="legenda-grafico">Já são ${semana.diasObservados} dia(s) de histórico e ${semana.mudancas} mudança(s) de preço em ${semana.produtos} sabor(es).</p>`
+      );
+    }
+  } else {
+    partes.push(
+      `<p class="melhor-dia"><span class="rotulo-melhor-dia">Melhor dia pra comprar</span><b>${esc(semana.melhor.nome)}</b></p>`,
+      `<p class="legenda-grafico">Nos últimos ${semana.diasObservados} dias, os preços em ${esc(semana.melhor.nome)} ficaram <b>${porcento(semana.melhor.percentual)} abaixo</b> da média de cada sabor; o dia mais caro foi ${esc(semana.pior.nome)}. Base: ${semana.mudancas} mudanças de preço em ${semana.produtos} sabores, últimos ${janelaDias} dias.</p>`,
+      reguaDosDias(semana)
+    );
+  }
+
+  $('#conteudo-melhor-dia').innerHTML = partes.join('');
 }
 
 function desenharFechamento({ rodada, resumo }) {
@@ -639,7 +995,7 @@ function desenharFechamento({ rodada, resumo }) {
     ['Recebido', dinheiro(resumo.totalRecebido)],
     ['A receber', dinheiro(resumo.totalAReceber)]
   ]
-    .map(([rotulo, valor]) => `<div class="numero"><b>${esc(valor)}</b><span>${esc(rotulo)}</span></div>`)
+    .map(([rotulo, valor]) => `<div class="num"><b>${esc(valor)}</b><span>${esc(rotulo)}</span></div>`)
     .join('');
 
   if (!resumo.produtos.length) {
@@ -1131,7 +1487,16 @@ $('#grade-produtos').addEventListener('click', (evento) => {
   const botao = evento.target.closest('button[data-acao]');
   if (!botao) return;
   const cartao = botao.closest('.cartao');
+  if (botao.dataset.acao === 'historico') return abrirHistoricoDePreco(cartao.dataset.id);
   mudarQuantidade(cartao.dataset.id, botao.dataset.acao === 'mais' ? 1 : -1);
+});
+
+$('#fechar-historico').addEventListener('click', () => $('#janela-historico').close());
+
+// Clique fora do conteúdo fecha a janela. O <dialog> entrega o clique no fundo
+// como se fosse nele mesmo, então comparar o alvo basta — e o Esc já vem de graça.
+$('#janela-historico').addEventListener('click', (evento) => {
+  if (evento.target === $('#janela-historico')) $('#janela-historico').close();
 });
 
 $('#botao-enviar').addEventListener('click', enviarPedido);

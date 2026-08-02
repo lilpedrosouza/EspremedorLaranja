@@ -163,6 +163,12 @@
     <div class="numeros" id="numeros-fechamento"></div>
 
     <section class="bloco">
+      <h2>Quando comprar</h2>
+      <p class="subtitulo">Pelo histórico de preço dos sabores. Enquanto não houver dado suficiente, esta seção diz isso em vez de chutar um dia.</p>
+      <div id="conteudo-melhor-dia"><p class="vazio">Conferindo o histórico…</p></div>
+    </section>
+
+    <section class="bloco">
       <h2>Lista de compra</h2>
       <p class="subtitulo">Some tudo por sabor. É essa lista que vai pro carrinho no site da Nescafé.</p>
       <div id="tabela-compra"></div>
@@ -276,6 +282,18 @@
       </div>
     </section>
   </main>
+
+  <!-- ---------- histórico de preço de um sabor ---------- -->
+  <dialog id="janela-historico" class="janela" aria-labelledby="titulo-historico">
+    <div class="janela-topo">
+      <div>
+        <h2 id="titulo-historico">Histórico de preço</h2>
+        <p class="subtitulo" id="subtitulo-historico"></p>
+      </div>
+      <button type="button" class="botao claro miudo" id="fechar-historico">Fechar</button>
+    </div>
+    <div id="conteudo-historico"></div>
+  </dialog>
 </div>
 
 <script src="config.js"></script>

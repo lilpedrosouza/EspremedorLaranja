@@ -19,6 +19,7 @@ const crypto = require('crypto');
 const catalogoNescafe = require('./lib/catalogo-nescafe');
 const banco = require('./lib/banco');
 const pix = require('./lib/pix');
+const precos = require('./lib/precos');
 const qrcode = require('qrcode');
 
 // PORT vem primeiro: é o que a hospedagem define, e ela precisa ganhar de um
@@ -29,6 +30,12 @@ const DIR_PUBLICO = path.join(__dirname, 'publico');
 
 const DURACAO_SESSAO = 30 * 24 * 60 * 60 * 1000; // 30 dias
 const INTERVALO_SINCRONIA = 12 * 60 * 60 * 1000; // 12 horas
+
+// Quanto tempo de histórico de preço entra na análise. Meio ano é longo o
+// bastante para o preço normal aparecer e curto o bastante para não julgar o
+// preço de hoje pelo que o site cobrava há dois anos. Também é o que segura o
+// tamanho da consulta: o histórico inteiro cresce para sempre.
+const JANELA_PRECOS_DIAS = 180;
 
 // Endereços do front que podem chamar esta API, separados por vírgula.
 // Ex.: ORIGENS_PERMITIDAS=https://lilpedrosouza.github.io,http://localhost:5173
@@ -371,6 +378,24 @@ async function pixParaPagar(valor) {
   };
 }
 
+/** O começo da janela de análise de preços. */
+function inicioDaJanela() {
+  return new Date(Date.now() - JANELA_PRECOS_DIAS * 24 * 60 * 60 * 1000);
+}
+
+/** Cada produto com o veredito do preço dele junto: 'abaixo', 'acima', 'media'. */
+async function produtosComAnalise(opcoes) {
+  const [lista, historico] = await Promise.all([
+    banco.listarProdutos(opcoes),
+    banco.historicoDeTodos(inicioDaJanela())
+  ]);
+  const agora = Date.now();
+  return lista.map((produto) => ({
+    ...produto,
+    analise: precos.resumo(historico.get(produto.id) || [], produto.preco, agora)
+  }));
+}
+
 async function rodarSincronizacao(disparadaPor) {
   try {
     const atual = await banco.listarProdutos();
@@ -498,7 +523,7 @@ async function tratarApi(requisicao, resposta, url) {
   if (rota === '/api/produtos' && metodo === 'GET') {
     if (!exigeLogin()) return;
     return responderJson(resposta, 200, {
-      produtos: await banco.listarProdutos({ soAtivos: !eComprador }),
+      produtos: await produtosComAnalise({ soAtivos: !eComprador }),
       sincronizacao: await banco.lerSincronizacao()
     });
   }
@@ -508,7 +533,7 @@ async function tratarApi(requisicao, resposta, url) {
     const registro = await rodarSincronizacao(usuario.nome);
     return responderJson(resposta, registro.situacao === 'ok' ? 200 : 502, {
       sincronizacao: registro,
-      produtos: await banco.listarProdutos()
+      produtos: await produtosComAnalise()
     });
   }
 
@@ -563,6 +588,48 @@ async function tratarApi(requisicao, resposta, url) {
     const produto = await banco.atualizarProduto(casaProduto[1], mudancas);
     if (!produto) return erro(resposta, 404, 'Produto não encontrado.');
     return responderJson(resposta, 200, produto);
+  }
+
+  /* ---- histórico de preço ---- */
+
+  /**
+   * O histórico de um sabor: os pontos para o gráfico e o veredito de hoje.
+   * Todo mundo vê — quem pede quer saber se está pagando caro.
+   */
+  const casaHistorico = rota.match(/^\/api\/produtos\/([\w-]+)\/historico$/);
+  if (casaHistorico && metodo === 'GET') {
+    if (!exigeLogin()) return;
+    const produto = await banco.produtoPorId(casaHistorico[1]);
+    if (!produto) return erro(resposta, 404, 'Produto não encontrado.');
+
+    const pontos = await banco.historicoDoProduto(produto.id, inicioDaJanela());
+    return responderJson(resposta, 200, {
+      produto: { id: produto.id, nome: produto.nome, categoria: produto.categoria, preco: produto.preco },
+      pontos,
+      analise: precos.resumo(pontos, produto.preco),
+      janelaDias: JANELA_PRECOS_DIAS
+    });
+  }
+
+  /**
+   * O melhor dia para comprar, e se hoje é um bom momento.
+   *
+   * Só para o comprador: é ele quem escolhe a hora de fechar a rodada e passar o
+   * cartão. Enquanto não houver histórico que sustente a conclusão, a resposta
+   * vem com `suficiente: false` e o motivo — a tela diz "ainda não sei" em vez de
+   * apontar um dia sorteado no ruído.
+   */
+  if (rota === '/api/melhor-dia' && metodo === 'GET') {
+    if (!exigeComprador()) return;
+    const historico = await banco.historicoDeTodos(inicioDaJanela());
+    const aberta = await banco.garantirRodadaAberta(criarRodada);
+    const resumo = resumoDaRodada(await banco.pedidosDaRodada(aberta.id));
+
+    return responderJson(resposta, 200, {
+      semana: precos.melhorDiaDaSemana(historico),
+      momento: precos.momentoDaLista(resumo.produtos, historico),
+      janelaDias: JANELA_PRECOS_DIAS
+    });
   }
 
   /* ---- meu pedido ---- */

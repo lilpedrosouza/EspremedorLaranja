@@ -760,6 +760,226 @@ tr:last-child td { border-bottom: 0; }
 
 .torradeira.ruim { background: var(--alerta); }
 
+/* ---------- análise de preço ---------- */
+
+.linha-analise {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* O selo diz o recado por escrito; a cor só reforça. Quem não separa verde de
+   laranja lê a mesma coisa. */
+.selo-preco {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.selo-preco.abaixo { background: #e8f6ef; color: #04613c; border-color: #bfe4d3; }
+.selo-preco.acima  { background: #fdeee6; color: #8a3607; border-color: #f2d0bc; }
+.selo-preco.media  { background: #f1f2f4; color: var(--tinta-fraca); border-color: var(--linha); }
+
+.botao-historico {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--linha);
+  background: var(--papel);
+  color: var(--tinta-fraca);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.botao-historico svg { width: 13px; height: 13px; }
+.botao-historico:hover { color: var(--casca); border-color: var(--casca); }
+
+/* ---------- janela do histórico ---------- */
+
+.janela {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  border: 0;
+  border-radius: 14px;
+  padding: 20px;
+  background: var(--papel);
+  color: var(--tinta);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+}
+
+.janela::backdrop { background: rgba(20, 22, 26, 0.5); }
+
+.janela-topo {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.janela-topo h2 {
+  margin: 0 0 2px;
+  font-family: var(--display);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.janela-topo .subtitulo { margin: 0; font-size: 13px; color: var(--tinta-fraca); }
+.janela-topo button { margin-left: auto; flex: none; }
+
+/* ---------- gráfico ---------- */
+
+.grafico {
+  position: relative;
+  margin: 14px 0 0;
+}
+
+.grafico-precos { width: 100%; height: auto; display: block; overflow: visible; }
+
+/* Grade e eixos ficam um passo acima do fundo e sempre sólidos: tracejado ali
+   viraria ruído e passaria a ideia de "projeção", que não é o caso. */
+.grafico-precos .grade { stroke: var(--linha); stroke-width: 1; }
+
+.grafico-precos .area { fill: var(--casca); opacity: 0.1; }
+.grafico-precos .linha { fill: none; stroke: var(--casca); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+
+/* A média é referência, não grade — é a única linha tracejada do desenho. */
+.grafico-precos .linha-media { stroke: var(--tinta-fraca); stroke-width: 1; stroke-dasharray: 5 4; }
+
+/* O anel branco mantém o ponto legível onde ele cruza a própria linha. */
+.grafico-precos .ponto { fill: var(--casca); stroke: var(--papel); stroke-width: 2; }
+.grafico-precos .ponto.atual { fill: var(--casca); }
+
+.grafico-precos .cursor { stroke: var(--tinta-fraca); stroke-width: 1; }
+.grafico-precos .cursor.escondido { display: none; }
+
+/* Texto nunca veste a cor do dado: quem carrega a identidade é a linha. */
+.grafico-precos .rotulo-eixo { fill: var(--tinta-fraca); font-family: var(--mono); font-size: 11px; }
+/* O contorno branco por baixo é o mesmo truque do anel dos pontos: o rótulo fica
+   dentro do quadro e precisa continuar legível se a linha passar atrás dele. */
+.grafico-precos .rotulo-media {
+  fill: var(--tinta-fraca);
+  font-size: 11px;
+  paint-order: stroke;
+  stroke: var(--papel);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.grafico-precos .rotulo-ponta { fill: var(--tinta); font-family: var(--mono); font-size: 12px; font-weight: 700; }
+
+#area-grafico { cursor: crosshair; }
+
+.dica-grafico {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background: var(--tinta);
+  color: #fff;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+}
+
+.dica-grafico b { display: block; font-family: var(--mono); font-size: 14px; }
+.dica-grafico span { display: block; color: rgba(255, 255, 255, 0.72); }
+
+.legenda-grafico { margin: 10px 0 0; font-size: 12px; color: var(--tinta-fraca); }
+
+.tabela-historico { margin-top: 16px; border-top: 1px solid var(--linha); padding-top: 12px; }
+.tabela-historico summary { cursor: pointer; font-size: 13px; color: var(--tinta-fraca); }
+.tabela-historico table { margin-top: 12px; }
+
+/* ---------- veredito e melhor dia ---------- */
+
+.veredito {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  border: 1px solid var(--linha);
+  background: #f7f8f9;
+}
+
+.veredito > span:first-child { font-weight: 700; flex: none; }
+.veredito.abaixo { background: #e8f6ef; border-color: #bfe4d3; }
+.veredito.acima  { background: #fdeee6; border-color: #f2d0bc; }
+
+.melhor-dia {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+.melhor-dia b { font-family: var(--display); font-size: 26px; font-weight: 800; letter-spacing: -0.02em; }
+
+.rotulo-melhor-dia {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tinta-fraca);
+}
+
+.dias-semana { margin-top: 14px; display: grid; gap: 6px; }
+
+.dia-semana {
+  display: grid;
+  grid-template-columns: minmax(96px, 150px) minmax(0, 1fr) 62px;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.dia-semana.melhor { font-weight: 600; }
+.dia-nome { display: flex; align-items: center; gap: 6px; }
+
+.etiqueta {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--tinta);
+  color: #fff;
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-weight: 600;
+}
+
+/* O trilho tem o zero no meio: para a esquerda é mais barato que a média, para
+   a direita é mais caro. O risquinho central é o zero. */
+.dia-trilho {
+  position: relative;
+  height: 14px;
+  background: linear-gradient(to right, transparent calc(50% - 1px), var(--linha) calc(50% - 1px), var(--linha) calc(50% + 1px), transparent calc(50% + 1px));
+}
+
+.dia-trilho i {
+  position: absolute;
+  top: 2px;
+  height: 10px;
+  min-width: 2px;
+}
+
+.dia-trilho i.abaixo { right: 50%; background: var(--verde); border-radius: 4px 0 0 4px; }
+.dia-trilho i.acima  { left: 50%;  background: var(--casca); border-radius: 0 4px 4px 0; }
+
+.dia-valor { font-family: var(--mono); font-size: 12px; text-align: right; }
+
 /* ---------- responsivo ---------- */
 
 @media (max-width: 900px) {
@@ -773,6 +993,12 @@ tr:last-child td { border-bottom: 0; }
   }
   .topo-interno { gap: 10px; }
   .marca span { display: none; }
+
+  /* Na tela estreita o nome do dia sozinho já ocupa a linha: a régua vira duas
+     faixas, com o trilho embaixo do nome, em vez de espremer as três colunas. */
+  .dia-semana { grid-template-columns: minmax(0, 1fr) 62px; }
+  .dia-trilho { grid-column: 1 / -1; }
+  .janela { padding: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
