@@ -732,6 +732,95 @@ tr:last-child td { border-bottom: 0; }
 
 .dica { font-size: 12px; color: var(--tinta-fraca); margin: 14px 0 0; }
 
+.titulo-painel {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0 0 4px;
+}
+
+/* ---------- senha e código ---------- */
+
+.campo-senha { position: relative; display: flex; }
+.campo-senha input { flex: 1; padding-right: 42px; }
+
+/* O olho fica dentro do campo, encostado na borda direita. */
+.olho {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--tinta-fraca);
+  cursor: pointer;
+}
+
+.olho svg { width: 19px; height: 19px; }
+.olho:hover { color: var(--tinta); background: #f2f3f5; }
+
+/* Riscado na diagonal quando a senha está à mostra: o ícone sozinho não diz
+   qual dos dois estados é o atual. */
+.olho[aria-pressed='true'] { color: var(--casca); }
+.olho[aria-pressed='true']::after {
+  content: '';
+  position: absolute;
+  width: 21px;
+  height: 1.6px;
+  background: currentColor;
+  transform: rotate(-45deg);
+  border-radius: 2px;
+}
+
+.campo-codigo {
+  font-family: var(--mono);
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.link-discreto {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--casca);
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.link-discreto:hover { color: var(--casca-clara); }
+
+/* Dentro da caixa de erro ele acompanha o texto, sem margem própria. */
+.recado-erro .no-erro { margin-top: 0; color: #8c1f18; font-weight: 600; }
+
+.codigo-grande {
+  margin: 0 0 18px;
+  padding: 18px 14px;
+  border: 1px dashed var(--linha);
+  border-radius: var(--raio);
+  background: #fbfbfc;
+  font-family: var(--mono);
+  font-size: clamp(17px, 4.6vw, 25px);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-align: center;
+  /* É para ser copiado à mão ou com o mouse. */
+  user-select: all;
+  word-break: break-all;
+}
+
+.janela.estreita { width: min(460px, calc(100vw - 32px)); }
+
 .recado-erro {
   background: #fdf3f2;
   color: #8c1f18;

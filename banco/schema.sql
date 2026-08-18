@@ -9,9 +9,23 @@ create table if not exists usuarios (
   nome       text        not null,
   chave      text        not null unique,
   senha      text        not null,
-  papel      text        not null default 'colega',
+  papel      text        not null default 'usuario',
   criado_em  timestamptz not null default now()
 );
+
+-- Os papéis se chamavam 'colega' e 'comprador'. Bancos criados antes da troca
+-- são renomeados aqui. Rodar de novo não faz nada: depois da primeira vez não
+-- sobra nenhuma linha com o nome antigo.
+alter table usuarios alter column papel set default 'usuario';
+update usuarios set papel = 'usuario'    where papel = 'colega';
+update usuarios set papel = 'espremedor' where papel = 'comprador';
+
+-- Código de recuperação: o que a pessoa usa para redefinir a senha sozinha,
+-- já que aqui ninguém cadastra e-mail e não há como mandar link nenhum.
+-- Guardado com scrypt e sal, igual à senha — quem lê o banco não consegue
+-- recuperar o código, só conferir se o digitado bate.
+alter table usuarios add column if not exists recuperacao    text;
+alter table usuarios add column if not exists recuperacao_em timestamptz;
 
 create table if not exists produtos (
   id           text primary key,

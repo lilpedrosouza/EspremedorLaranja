@@ -1,7 +1,7 @@
 # 🍊 Espremedor de Laranja — pedidos de cápsulas
 
 Cada pessoa entra, escolhe os sabores e a quantidade de caixas. Quem tem o perfil
-de **comprador** vê tudo somado numa lista só, com o quanto cada um deve.
+de **espremedor** vê tudo somado numa lista só, com o quanto cada um deve.
 
 Os dados ficam num Postgres (Supabase) e o servidor é Node puro, sem framework.
 
@@ -84,7 +84,7 @@ Local elas saem do `.env` (que o Git ignora). Na Railway, do painel.
 
 ## O dia a dia
 
-1. **O primeiro acesso criado vira o comprador.** Cadastre-se antes de divulgar
+1. **O primeiro acesso criado vira o espremedor.** Cadastre-se antes de divulgar
    o link.
 2. Você abre uma rodada e dá um nome a ela (*Fechamento* → *Rodada*). Dá para
    deixar um recado que aparece na tela de todo mundo, tipo "peça até sexta, 12h".
@@ -98,9 +98,9 @@ Local elas saem do `.env` (que o Git ignora). Na Railway, do painel.
 
 ## Pagamento por Pix
 
-Quem envia o pedido vê na hora o QR Code do comprador, **já com o valor exato
+Quem envia o pedido vê na hora o QR Code do espremedor, **já com o valor exato
 que aquela pessoa deve** — mais o "copia e cola" e a chave escrita na tela.
-Depois de pagar, ela marca *Já paguei*; o comprador confere no **Fechamento** e
+Depois de pagar, ela marca *Já paguei*; o espremedor confere no **Fechamento** e
 marca *Recebi o dinheiro*. São duas marcações separadas de propósito: uma coisa
 é a pessoa avisar, outra é o dinheiro ter caído.
 
@@ -114,7 +114,7 @@ novo valor — senão alguém pagaria a conta errada.
 
 Dá para fechar a rodada e adiantar a compra mesmo com gente devendo. Quem não
 pagou continua vendo, na coluna **Rodadas anteriores**, o que pediu e o QR
-daquela rodada, e pode pagar depois. O comprador acompanha em *Fechamento* →
+daquela rodada, e pode pagar depois. O espremedor acompanha em *Fechamento* →
 **Ficou devendo de rodadas anteriores**, que lista pessoa, rodada e valor até
 ele confirmar o recebimento.
 
@@ -134,14 +134,14 @@ qualquer pessoa na internet, para sempre. No banco, ela só chega a quem está
 logado no sistema.
 
 Sem chave configurada nada quebra: a tela avisa para combinar o pagamento com o
-comprador, e o resto segue funcionando.
+espremedor, e o resto segue funcionando.
 
 ## Rastreio da entrega
 
 A aba **Rastreio** mostra uma linha por rodada com o código da entrega e um
 botão que abre o acompanhamento em `ondeestameupedido.com.br`.
 
-Quem escreve o código é o comprador, depois da compra. Todo mundo vê — quem
+Quem escreve o código é o espremedor, depois da compra. Todo mundo vê — quem
 pediu tem interesse em saber onde as cápsulas estão.
 
 Dá para colar **só o código** (`FR260730GKSEI`) ou **o endereço inteiro**
@@ -193,6 +193,44 @@ dados seria um palpite com cara de conclusão.
 O histórico começa a ser gravado a partir da instalação desta versão — não há
 como recuperar preço de antes. Nos primeiros dias, portanto, é normal a tela
 mostrar tudo como "sem histórico ainda". A análise olha os últimos 180 dias.
+
+## Entrar, e o que fazer quando esquecer a senha
+
+O acesso é nome + senha. Quem digita o nome errado ouve *"não encontrei esse nome"*
+com um atalho para criar o acesso; quem erra a senha ouve isso e ganha o atalho
+para recuperar. Cinco tentativas erradas seguidas travam aquele nome por um
+minuto, para ninguém ficar chutando senha dos outros.
+
+### O código de recuperação
+
+Como aqui ninguém cadastra e-mail, não há link de redefinição para mandar. No
+lugar disso, **ao criar o acesso você recebe um código** parecido com
+
+```
+K7HP-3QMD-XW9F-BTRJ
+```
+
+Ele aparece **uma única vez**. Anote no papel, no bloco de notas do celular, onde
+quiser — é ele que devolve seu acesso depois. Guardamos só o resumo embaralhado
+dele, então nem quem abre o banco consegue lê-lo.
+
+Esqueceu a senha? Na tela de entrada, **Esqueci minha senha** → nome + código +
+senha nova, e você já entra. O código gasto deixa de valer na hora e um novo
+aparece na tela para você anotar no lugar do antigo.
+
+**Quem já tinha conta antes disso não tem código.** É só ir em *Minha conta* →
+**Código de recuperação**, confirmar a senha e gerar o seu. Vale fazer hoje: sem
+código, esquecer a senha vira problema de outra pessoa resolver.
+
+### Perdi o código também
+
+Aí é no braço: qualquer espremedor abre *Minha conta* → **Quem tem acesso** e
+clica em **Redefinir senha** ao lado do seu nome. A própria tela de recuperação
+mostra a quem pedir.
+
+Trocar de senha por qualquer um desses caminhos **desconecta os outros
+aparelhos** — quem estava logado no seu nome em outro lugar cai fora. Quem trocou
+continua na tela normalmente.
 
 ## Segurança — leia antes de divulgar o link
 

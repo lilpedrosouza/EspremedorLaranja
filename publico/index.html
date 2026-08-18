@@ -26,24 +26,68 @@
     </div>
     <p class="abertura">Escolha seus sabores de cápsula. Uma pessoa faz a compra pra todo mundo.</p>
 
-    <div class="abas-entrada" role="group" aria-label="Entrar ou criar acesso">
-      <button type="button" id="aba-entrar" aria-pressed="true">Entrar</button>
-      <button type="button" id="aba-criar" aria-pressed="false">Criar acesso</button>
+    <!-- entrar / criar acesso -->
+    <div id="painel-acesso">
+      <div class="abas-entrada" role="group" aria-label="Entrar ou criar acesso">
+        <button type="button" id="aba-entrar" aria-pressed="true">Entrar</button>
+        <button type="button" id="aba-criar" aria-pressed="false">Criar acesso</button>
+      </div>
+
+      <div id="erro-entrada" class="recado-erro escondido" role="alert"></div>
+
+      <!-- form de verdade: é o que faz o navegador oferecer salvar e preencher a senha -->
+      <form id="forma-entrada" novalidate>
+        <div class="campo">
+          <label for="campo-nome">Seu nome</label>
+          <input id="campo-nome" name="username" autocomplete="username" placeholder="Como o pessoal te chama">
+        </div>
+        <div class="campo">
+          <label for="campo-senha">Senha</label>
+          <div class="campo-senha">
+            <input id="campo-senha" name="password" type="password" autocomplete="current-password" placeholder="Mínimo de 4 caracteres">
+            <button type="button" class="olho" data-ver="campo-senha" aria-pressed="false" aria-label="Mostrar a senha">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M1.5 10S4.5 4.5 10 4.5 18.5 10 18.5 10 15.5 15.5 10 15.5 1.5 10 1.5 10Z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
+          </div>
+        </div>
+        <button type="submit" id="botao-entrada" class="botao largo">Entrar</button>
+      </form>
+
+      <p class="dica" id="dica-entrada">Ainda não tem acesso? Toque em “Criar acesso”.</p>
+      <button type="button" class="link-discreto" id="abrir-recuperacao">Esqueci minha senha</button>
     </div>
 
-    <div id="erro-entrada" class="recado-erro escondido" role="alert"></div>
+    <!-- esqueci minha senha -->
+    <div id="painel-recuperacao" class="escondido">
+      <h2 class="titulo-painel">Esqueci minha senha</h2>
+      <p class="abertura">Use o código de recuperação que você anotou quando criou o acesso.</p>
 
-    <div class="campo">
-      <label for="campo-nome">Seu nome</label>
-      <input id="campo-nome" autocomplete="name" placeholder="Como o pessoal te chama">
-    </div>
-    <div class="campo">
-      <label for="campo-senha">Senha</label>
-      <input id="campo-senha" type="password" autocomplete="current-password" placeholder="Mínimo de 4 caracteres">
-    </div>
+      <div id="erro-recuperacao" class="recado-erro escondido" role="alert"></div>
 
-    <button type="button" id="botao-entrada" class="botao largo">Entrar</button>
-    <p class="dica" id="dica-entrada">Ainda não tem acesso? Toque em “Criar acesso”.</p>
+      <form id="forma-recuperacao" novalidate>
+        <div class="campo">
+          <label for="rec-nome">Seu nome</label>
+          <input id="rec-nome" name="username" autocomplete="username" placeholder="O mesmo de sempre">
+        </div>
+        <div class="campo">
+          <label for="rec-codigo">Código de recuperação</label>
+          <input id="rec-codigo" class="campo-codigo" placeholder="ABCD-EFGH-JKMN-PQRS" autocomplete="one-time-code" spellcheck="false" autocapitalize="characters">
+        </div>
+        <div class="campo">
+          <label for="rec-senha">Nova senha</label>
+          <div class="campo-senha">
+            <input id="rec-senha" type="password" autocomplete="new-password" placeholder="Mínimo de 4 caracteres">
+            <button type="button" class="olho" data-ver="rec-senha" aria-pressed="false" aria-label="Mostrar a senha">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M1.5 10S4.5 4.5 10 4.5 18.5 10 18.5 10 15.5 15.5 10 15.5 1.5 10 1.5 10Z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
+          </div>
+        </div>
+        <button type="submit" id="botao-recuperar" class="botao largo">Trocar a senha e entrar</button>
+      </form>
+
+      <p class="dica" id="dica-recuperacao">Perdeu o código? Peça a um espremedor para redefinir sua senha.</p>
+      <button type="button" class="link-discreto" id="voltar-entrada">Voltar para a entrada</button>
+    </div>
   </div>
 </section>
 
@@ -64,13 +108,13 @@
       <nav class="navegacao" id="navegacao" aria-label="Seções">
         <button type="button" data-aba="loja" aria-current="true">Sabores</button>
         <button type="button" data-aba="rastreio">Rastreio</button>
-        <button type="button" data-aba="fechamento" class="so-comprador escondido">Fechamento</button>
-        <button type="button" data-aba="catalogo" class="so-comprador escondido">Catálogo</button>
+        <button type="button" data-aba="fechamento" class="so-espremedor escondido">Fechamento</button>
+        <button type="button" data-aba="catalogo" class="so-espremedor escondido">Catálogo</button>
         <button type="button" data-aba="pessoas">Minha conta</button>
       </nav>
       <div class="usuario-topo">
         <b id="nome-usuario"></b>
-        <span class="selo escondido" id="selo-comprador">comprador</span>
+        <span class="selo escondido" id="selo-espremedor">espremedor</span>
         <button type="button" class="botao claro miudo" id="botao-sair">Sair</button>
       </div>
     </div>
@@ -264,11 +308,12 @@
     </div>
     <section class="bloco escondido" id="bloco-pessoas">
       <h2>Quem tem acesso</h2>
-      <p class="subtitulo">O perfil de comprador vê o fechamento e cuida do catálogo.</p>
+      <p class="subtitulo">O perfil de espremedor vê o fechamento e cuida do catálogo.</p>
       <div id="tabela-pessoas"></div>
     </section>
     <section class="bloco">
       <h2>Minha senha</h2>
+      <p class="subtitulo">Trocar a senha desconecta os outros aparelhos. Você continua nesta tela.</p>
       <div class="linha-campos">
         <div class="campo">
           <label for="senha-atual">Senha atual</label>
@@ -279,6 +324,18 @@
           <input id="senha-nova" type="password" autocomplete="new-password">
         </div>
         <button type="button" class="botao claro" id="botao-trocar-senha">Trocar senha</button>
+      </div>
+    </section>
+
+    <section class="bloco">
+      <h2>Código de recuperação</h2>
+      <p class="subtitulo" id="estado-recuperacao"></p>
+      <div class="linha-campos">
+        <div class="campo">
+          <label for="senha-para-codigo">Confirme sua senha</label>
+          <input id="senha-para-codigo" type="password" autocomplete="current-password">
+        </div>
+        <button type="button" class="botao claro" id="botao-gerar-codigo">Gerar código</button>
       </div>
     </section>
   </main>
@@ -295,6 +352,23 @@
     <div id="conteudo-historico"></div>
   </dialog>
 </div>
+
+<!-- ---------- código de recuperação, mostrado uma única vez ---------- -->
+<!-- Fora de #tela-app de propósito: precisa poder aparecer mesmo com a tela do
+     app ainda escondida, logo depois do cadastro. -->
+<dialog id="janela-codigo" class="janela estreita" aria-labelledby="titulo-codigo">
+  <div class="janela-topo">
+    <div>
+      <h2 id="titulo-codigo">Anote seu código de recuperação</h2>
+      <p class="subtitulo" id="subtitulo-codigo">É o que devolve seu acesso se você esquecer a senha. Ele não aparece de novo.</p>
+    </div>
+  </div>
+  <p class="codigo-grande" id="valor-codigo"></p>
+  <div class="acoes">
+    <button type="button" class="botao claro" id="copiar-codigo">Copiar código</button>
+    <button type="button" class="botao verde" id="guardei-codigo">Anotei, pode fechar</button>
+  </div>
+</dialog>
 
 <script src="config.js"></script>
 <script src="app.js"></script>

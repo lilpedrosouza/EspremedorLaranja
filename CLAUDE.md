@@ -34,9 +34,9 @@ serve a API e a tela estática de `publico/`.
 
 **`servidor.js`** — HTTP, sessões e regras de negócio. `tratarApi()` é uma cadeia linear
 de `if (rota === ... && metodo === ...)`; rota nova entra como mais um `if` antes do 404
-final. A autorização é feita por dois fechamentos, `exigeLogin()` e `exigeComprador()`,
+final. A autorização é feita por dois fechamentos, `exigeLogin()` e `exigeEspremedor()`,
 chamados no começo de cada rota — eles já respondem 401/403 e devolvem `false`, daí o
-padrão `if (!exigeComprador()) return;`.
+padrão `if (!exigeEspremedor()) return;`.
 
 **`lib/banco.js`** — o único arquivo que fala SQL. Traduz `coluna_do_banco` ↔
 `campoDoJavaScript` nas funções `paraProduto` / `paraRodada` / `paraPedido` / `paraUsuario`.
@@ -72,13 +72,20 @@ externa; o QR em SVG sai do `qrcode` em `servidor.js`.
 **`publico/`** — página única em JavaScript de navegador puro, sem build nem framework.
 Um objeto global `estado`, funções `desenharX()` que reconstroem HTML e `trocarAba()` que
 carrega os dados da aba. As abas são `loja`, `rastreio`, `fechamento`, `catalogo`,
-`pessoas`; as duas do meio só existem para o comprador (classe `.so-comprador`).
+`pessoas`; as duas do meio só existem para o espremedor (classe `.so-espremedor`).
 
 ## Modelo de domínio
 
-- **Papéis**: `comprador` e `colega`. O primeiro cadastro do banco vira comprador
-  automaticamente; depois só um comprador promove alguém, e o sistema não deixa ficar sem
-  nenhum.
+- **Papéis**: `espremedor` e `usuario` (sem acento, como está no banco). O primeiro cadastro
+  vira espremedor automaticamente; depois só um espremedor promove alguém, e o sistema não
+  deixa ficar sem nenhum. Os nomes antigos eram `comprador` e `colega` — o `schema.sql` tem
+  dois `update` que renomeiam e não fazem nada a partir da segunda vez.
+- **Código de recuperação**: é o "esqueci minha senha" daqui, porque ninguém cadastra
+  e-mail e não há como mandar link. Dezesseis caracteres de um alfabeto sem `0/O/1/I/L`,
+  guardados com scrypt igual à senha — o código em texto só existe no instante em que é
+  gerado e devolvido pela rota. É de uso único: ao gastar, `/api/recuperar` já emite outro.
+  Quem perdeu o código cai no caminho manual, e `/api/espremedores` (sem login) diz a quem
+  pedir. Trocar de senha por qualquer caminho derruba as sessões antigas.
 - **Rodada**: só pode haver uma aberta. Quem garante é o índice parcial
   `rodada_aberta_unica`, e `garantirRodadaAberta()` conta com o `on conflict do nothing`
   para que duas requisições simultâneas não criem duas rodadas.
@@ -86,17 +93,18 @@ carrega os dados da aba. As abas são `loja`, `rastreio`, `fechamento`, `catalog
   há ler-modificar-gravar. `itens` é `jsonb` de propósito: é uma fotografia com nome e
   preço congelados no momento do pedido, e não uma referência ao catálogo.
 - **Pagamento**: duas marcações independentes. `pago_em` é a pessoa avisando; `confirmado_em`
-  é o comprador confirmando que caiu. Alterar o pedido zera as duas (o valor mudou).
+  é o espremedor confirmando que caiu. Alterar o pedido zera as duas (o valor mudou).
 - **Dívida sobrevive ao fechamento**: `/api/minhas-rodadas` (para quem deve) e
-  `/api/pendencias` (para o comprador) leem pedidos de rodadas já fechadas com
+  `/api/pendencias` (para o espremedor) leem pedidos de rodadas já fechadas com
   `confirmado_em is null`.
 - **Histórico de preço**: a tabela `precos` ganha uma linha **só quando o preço muda**
-  — a conferência está no próprio `insert` (`SQL_REGISTRAR_PRECO`), não em código. Cada
-  linha vale até a próxima, então quem lê reconstrói o preço de qualquer dia. A gravação
-  entra na mesma transação de `salvarCatalogo`, e `atualizarProduto` também registra: preço
-  corrigido na mão é história de preço igual. A janela de análise é de 180 dias
-  (`JANELA_PRECOS_DIAS`), que é o que segura o tamanho da consulta — a tabela cresce para
-  sempre.
+  — a conferência está no próprio `insert` de `registrarPrecos`, não em código. Cada linha
+  vale até a próxima, então quem lê reconstrói o preço de qualquer dia. A gravação entra na
+  mesma transação de `salvarCatalogo`, e `atualizarProduto` também registra: preço corrigido
+  na mão é história de preço igual. Duas sincronizações simultâneas ainda furam a trava, e
+  por isso a leitura descarta ponto repetido em sequência (`semRepetidosSeguidos`). A janela
+  de análise é de 180 dias (`JANELA_PRECOS_DIAS`), que é o que segura o tamanho da consulta —
+  a tabela cresce para sempre.
 - **Cápsula avulsa × caixa**: o site vende os dois com o mesmo nome-base. Só o item com
   contagem de cápsulas no nome (`pareceCaixa`) entra `ativo`, senão o fechamento cobraria
   dez vezes menos. `esconderPrecoDeUnidade()` reforça isso a cada sincronização, mas nunca
@@ -123,7 +131,14 @@ carrega os dados da aba. As abas são `loja`, `rastreio`, `fechamento`, `catalog
   o repositório é público. `.env` e `dados/` (do sistema antigo em JSON, com hashes de senha
   reais) são ignorados pelo Git e devem continuar assim.
 - **O cadastro é aberto** — qualquer pessoa com o endereço cria acesso. É uma decisão
-  consciente, documentada no README; não "corrija" isso sem pedir.
+  consciente, documentada no README; não "corrija" isso sem pedir. É por isso também que
+  a entrada pode dizer "não achei esse nome": quem quisesse a lista de nomes bastaria
+  tentar criar acesso com cada um, então esconder isso no login não protegeria nada e só
+  atrapalharia quem digitou torto.
+- **Gravar em lote, nunca linha a linha.** Cada ida ao Supabase custa ~144 ms. Um `for` com
+  `await` sobre o catálogo (~200 itens) segura a transação por quase um minuto, e nesse
+  tempo `/api/sessao` — que é o `healthcheckPath` da Railway — não responde, o contêiner é
+  reiniciado e o site sai do ar. Já aconteceu; ver `gravarLoteDeProdutos`.
 
 ## Deploy
 

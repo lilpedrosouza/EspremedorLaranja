@@ -70,7 +70,7 @@ function explicar(falha) {
     console.log(`    rodada aberta        : ${rodada ? rodada.nome : '(nenhuma)'}`);
     console.log(
       usuarios === 0
-        ? '\n  Ninguém se cadastrou ainda — o primeiro acesso criado vira o comprador.\n'
+        ? '\n  Ninguém se cadastrou ainda — o primeiro acesso criado vira o espremedor.\n'
         : '\n'
     );
   } catch (falha) {

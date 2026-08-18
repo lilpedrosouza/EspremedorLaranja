@@ -130,7 +130,15 @@ async function api(caminho, opcoes = {}) {
     /* resposta sem corpo */
   }
   if (resposta.status === 401) guardarToken(null);
-  if (!resposta.ok) throw new Error(dados.erro || `Falha na comunicação (${resposta.status}).`);
+  if (!resposta.ok) {
+    const falha = new Error(dados.erro || `Falha na comunicação (${resposta.status}).`);
+    // O corpo vai junto: a tela de entrada precisa saber se o problema foi o
+    // nome ou a senha para oferecer a saída certa, e isso vem em sinalizadores
+    // como `naoCadastrado` — não dá para adivinhar pelo texto da mensagem.
+    falha.status = resposta.status;
+    falha.dados = dados;
+    throw falha;
+  }
   return dados;
 }
 
@@ -165,6 +173,8 @@ function ajustarEntrada() {
   $('#aba-entrar').setAttribute('aria-pressed', String(!criando));
   $('#aba-criar').setAttribute('aria-pressed', String(criando));
   $('#botao-entrada').textContent = criando ? 'Criar acesso' : 'Entrar';
+  // O navegador usa isto para decidir entre preencher a senha guardada e
+  // oferecer a criação de uma nova.
   $('#campo-senha').setAttribute('autocomplete', criando ? 'new-password' : 'current-password');
   $('#dica-entrada').textContent = criando
     ? 'Use seu primeiro nome. A senha serve só pra ninguém pedir no seu lugar.'
@@ -172,29 +182,160 @@ function ajustarEntrada() {
   $('#erro-entrada').classList.add('escondido');
 }
 
-function mostrarErroEntrada(mensagem) {
+/**
+ * O recado de erro da entrada, com um botão opcional ao lado.
+ *
+ * O texto entra por textContent, e não por innerHTML: ele vem do servidor, e
+ * mensagem de erro não é lugar para interpretar marcação.
+ */
+function mostrarErroEntrada(mensagem, acao) {
   const caixa = $('#erro-entrada');
+  caixa.textContent = mensagem;
+  if (acao) {
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = 'link-discreto no-erro';
+    botao.textContent = acao.texto;
+    botao.addEventListener('click', acao.aoClicar);
+    caixa.append(' ', botao);
+  }
+  caixa.classList.remove('escondido');
+}
+
+function mostrarErroRecuperacao(mensagem) {
+  const caixa = $('#erro-recuperacao');
   caixa.textContent = mensagem;
   caixa.classList.remove('escondido');
 }
 
-async function enviarEntrada() {
+/** Alterna entre o painel de entrar/criar e o de recuperar a senha. */
+function mostrarPainelEntrada(qual) {
+  $('#painel-acesso').classList.toggle('escondido', qual !== 'acesso');
+  $('#painel-recuperacao').classList.toggle('escondido', qual !== 'recuperacao');
+  $('#erro-entrada').classList.add('escondido');
+  $('#erro-recuperacao').classList.add('escondido');
+
+  if (qual === 'recuperacao') {
+    // Leva junto o nome que a pessoa já tinha digitado: ela chegou aqui depois
+    // de tentar entrar, e redigitar o mesmo nome é atrito à toa.
+    if ($('#campo-nome').value.trim() && !$('#rec-nome').value.trim()) {
+      $('#rec-nome').value = $('#campo-nome').value.trim();
+    }
+    mostrarQuemAjuda();
+    $('#rec-nome').focus();
+  } else {
+    $('#campo-nome').focus();
+  }
+}
+
+function nomesEmLista(nomes) {
+  if (nomes.length === 1) return nomes[0];
+  return `${nomes.slice(0, -1).join(', ')} ou ${nomes[nomes.length - 1]}`;
+}
+
+/** Quem procurar quando o código de recuperação também se perdeu. */
+async function mostrarQuemAjuda() {
+  try {
+    const { espremedores } = await api('/api/espremedores');
+    if (!espremedores.length) return;
+    $('#dica-recuperacao').textContent =
+      `Perdeu o código? Peça a ${nomesEmLista(espremedores)} para redefinir sua senha.`;
+  } catch {
+    // A dica genérica já está escrita na tela; sem rede ela continua servindo.
+  }
+}
+
+let codigoNaTela = '';
+
+/** A janela que mostra o código — a única vez em que ele aparece. */
+function mostrarCodigo(codigo, titulo, subtitulo) {
+  codigoNaTela = codigo;
+  $('#titulo-codigo').textContent = titulo;
+  $('#subtitulo-codigo').textContent = subtitulo;
+  $('#valor-codigo').textContent = codigo;
+  const janela = $('#janela-codigo');
+  if (!janela.open) janela.showModal();
+}
+
+async function enviarEntrada(evento) {
+  if (evento) evento.preventDefault();
   const nome = $('#campo-nome').value.trim();
   const senha = $('#campo-senha').value;
   if (!nome || !senha) return mostrarErroEntrada('Preencha nome e senha.');
 
+  const criando = modoEntrada === 'criar';
   const botao = $('#botao-entrada');
   botao.disabled = true;
+  botao.textContent = criando ? 'Criando…' : 'Entrando…';
   try {
-    const rota = modoEntrada === 'criar' ? '/api/cadastro' : '/api/entrar';
-    const conta = await api(rota, { method: 'POST', corpo: { nome, senha } });
+    const conta = await api(criando ? '/api/cadastro' : '/api/entrar', {
+      method: 'POST',
+      corpo: { nome, senha }
+    });
     guardarToken(conta.token);
     $('#campo-senha').value = '';
     await iniciar();
+    if (conta.recuperacao) {
+      mostrarCodigo(
+        conta.recuperacao,
+        'Anote seu código de recuperação',
+        'É o que devolve seu acesso se você esquecer a senha. Ele não aparece de novo.'
+      );
+    }
   } catch (falha) {
-    mostrarErroEntrada(falha.message);
+    const naoCadastrado = falha.dados && falha.dados.naoCadastrado;
+    const senhaErrada = falha.dados && falha.dados.senhaErrada;
+    if (naoCadastrado && !criando) {
+      mostrarErroEntrada(falha.message, {
+        texto: 'Criar acesso com esse nome',
+        aoClicar: () => {
+          modoEntrada = 'criar';
+          ajustarEntrada();
+          $('#campo-senha').focus();
+        }
+      });
+    } else if (senhaErrada) {
+      mostrarErroEntrada(falha.message, {
+        texto: 'Esqueci minha senha',
+        aoClicar: () => mostrarPainelEntrada('recuperacao')
+      });
+    } else {
+      mostrarErroEntrada(falha.message);
+    }
   } finally {
     botao.disabled = false;
+    ajustarEntrada();
+  }
+}
+
+async function enviarRecuperacao(evento) {
+  if (evento) evento.preventDefault();
+  const nome = $('#rec-nome').value.trim();
+  const codigo = $('#rec-codigo').value.trim();
+  const novaSenha = $('#rec-senha').value;
+  if (!nome || !codigo || !novaSenha) return mostrarErroRecuperacao('Preencha os três campos.');
+
+  const botao = $('#botao-recuperar');
+  botao.disabled = true;
+  botao.textContent = 'Trocando…';
+  try {
+    const conta = await api('/api/recuperar', { method: 'POST', corpo: { nome, codigo, novaSenha } });
+    guardarToken(conta.token);
+    $('#rec-codigo').value = '';
+    $('#rec-senha').value = '';
+    await iniciar();
+    torradeira('Senha trocada. Bom te ver de volta.');
+    mostrarCodigo(
+      conta.recuperacao,
+      'Seu novo código de recuperação',
+      'O anterior foi usado e não vale mais. Anote este no lugar dele.'
+    );
+  } catch (falha) {
+    mostrarErroRecuperacao(falha.message);
+    if (falha.dados && falha.dados.semCodigo) mostrarQuemAjuda();
+  } finally {
+    botao.disabled = false;
+    botao.textContent = 'Trocar a senha e entrar';
   }
 }
 
@@ -613,7 +754,7 @@ function desenharPagamento() {
     $('#pix-valor').textContent = dinheiro(totalEnviado);
     $('#botao-copiar-pix').classList.add('escondido');
     $('#botao-paguei').classList.add('escondido');
-    mostrarAviso('O comprador ainda não cadastrou a chave Pix. Combine o pagamento com ele.', 'neutro');
+    mostrarAviso('O espremedor ainda não cadastrou a chave Pix. Combine o pagamento com ele.', 'neutro');
     return;
   }
 
@@ -635,11 +776,11 @@ function desenharPagamento() {
   if (pedido.confirmadoEm) {
     botao.disabled = true;
     botao.textContent = 'Pagamento confirmado';
-    mostrarAviso(`O comprador confirmou seu pagamento em ${quandoFoi(pedido.confirmadoEm)}.`, 'bom');
+    mostrarAviso(`O espremedor confirmou seu pagamento em ${quandoFoi(pedido.confirmadoEm)}.`, 'bom');
   } else if (pedido.pagoEm) {
     botao.disabled = false;
     botao.textContent = 'Avisei que paguei — desfazer';
-    mostrarAviso(`Você avisou que pagou em ${quandoFoi(pedido.pagoEm)}. Falta o comprador confirmar.`, 'neutro');
+    mostrarAviso(`Você avisou que pagou em ${quandoFoi(pedido.pagoEm)}. Falta o espremedor confirmar.`, 'neutro');
   } else {
     botao.disabled = false;
     botao.textContent = 'Já paguei';
@@ -699,12 +840,12 @@ function desenharAnteriores() {
                      <span class="pix-rotulo">Valor</span><b>${dinheiro(r.pix.valor)}</b>
                    </div>
                    <button type="button" class="botao claro largo" data-acao="copiar-pix">Copiar código Pix</button>`
-                : '<p class="aviso-pagamento neutro">O comprador ainda não cadastrou a chave Pix.</p>'
+                : '<p class="aviso-pagamento neutro">O espremedor ainda não cadastrou a chave Pix.</p>'
             }
             <button type="button" class="botao ${r.pagoEm ? 'claro' : 'verde'} largo" data-acao="paguei">
               ${r.pagoEm ? 'Avisei que paguei — desfazer' : 'Já paguei'}
             </button>
-            ${r.pagoEm ? `<p class="aviso-pagamento neutro">Avisado em ${quandoFoi(r.pagoEm)}. Falta o comprador confirmar.</p>` : ''}`
+            ${r.pagoEm ? `<p class="aviso-pagamento neutro">Avisado em ${quandoFoi(r.pagoEm)}. Falta o espremedor confirmar.</p>` : ''}`
           }
         </details>`;
     })
@@ -1308,13 +1449,14 @@ async function incluirProduto() {
 /* ------------------------------------------------------------------ */
 
 async function carregarPessoas() {
-  const comprador = estado.usuario && estado.usuario.papel === 'comprador';
-  $('#bloco-pessoas').classList.toggle('escondido', !comprador);
-  $('#titulo-conta').textContent = comprador ? 'Pessoas' : 'Minha conta';
-  $('#subtitulo-conta').textContent = comprador
+  const espremedor = estado.usuario && estado.usuario.papel === 'espremedor';
+  $('#bloco-pessoas').classList.toggle('escondido', !espremedor);
+  $('#titulo-conta').textContent = espremedor ? 'Pessoas' : 'Minha conta';
+  $('#subtitulo-conta').textContent = espremedor
     ? 'Quem tem acesso e quem faz a compra.'
-    : 'Troque sua senha quando quiser.';
-  if (!comprador) return;
+    : 'Troque sua senha ou gere seu código de recuperação.';
+  desenharEstadoRecuperacao();
+  if (!espremedor) return;
 
   try {
     const dados = await api('/api/usuarios');
@@ -1329,8 +1471,8 @@ async function carregarPessoas() {
               <td>${esc(pessoa.nome)}</td>
               <td>
                 <select data-acao="papel" style="padding:5px 8px;border:1px solid var(--linha);border-radius:6px">
-                  <option value="colega" ${pessoa.papel === 'colega' ? 'selected' : ''}>colega</option>
-                  <option value="comprador" ${pessoa.papel === 'comprador' ? 'selected' : ''}>comprador</option>
+                  <option value="usuario" ${pessoa.papel === 'usuario' ? 'selected' : ''}>usuário</option>
+                  <option value="espremedor" ${pessoa.papel === 'espremedor' ? 'selected' : ''}>espremedor</option>
                 </select>
               </td>
               <td>${quandoFoi(pessoa.criadoEm)}</td>
@@ -1353,12 +1495,49 @@ async function trocarMinhaSenha() {
   const nova = $('#senha-nova').value;
   if (!atual || !nova) return torradeira('Preencha as duas senhas.', true);
   try {
-    await api('/api/minha-senha', { method: 'POST', corpo: { atual, nova } });
+    const resposta = await api('/api/minha-senha', { method: 'POST', corpo: { atual, nova } });
+    // O servidor derruba as sessões antigas e abre uma nova para este aparelho.
+    // Sem guardar o token que volta, quem acabou de trocar a senha seria posto
+    // para fora junto com os outros.
+    if (resposta.token) guardarToken(resposta.token);
     $('#senha-atual').value = '';
     $('#senha-nova').value = '';
-    torradeira('Senha trocada.');
+    torradeira('Senha trocada. Os outros aparelhos foram desconectados.');
   } catch (falha) {
     torradeira(falha.message, true);
+  }
+}
+
+function desenharEstadoRecuperacao() {
+  const tem = Boolean(estado.usuario && estado.usuario.temRecuperacao);
+  $('#estado-recuperacao').textContent = tem
+    ? 'Você já tem um código guardado. Gerar outro faz o anterior deixar de valer — vale a pena se você acha que alguém o viu.'
+    : 'Você ainda não tem código. Sem ele, esquecer a senha só se resolve pedindo a um espremedor.';
+  $('#botao-gerar-codigo').textContent = tem ? 'Gerar outro código' : 'Gerar meu código';
+}
+
+async function gerarMeuCodigo() {
+  const senha = $('#senha-para-codigo').value;
+  if (!senha) return torradeira('Confirme sua senha para gerar o código.', true);
+
+  const botao = $('#botao-gerar-codigo');
+  botao.disabled = true;
+  try {
+    const dados = await api('/api/minha-recuperacao', { method: 'POST', corpo: { senha } });
+    $('#senha-para-codigo').value = '';
+    estado.usuario.temRecuperacao = true;
+    desenharEstadoRecuperacao();
+    mostrarCodigo(
+      dados.recuperacao,
+      dados.substituiu ? 'Seu novo código de recuperação' : 'Anote seu código de recuperação',
+      dados.substituiu
+        ? 'O código anterior não vale mais. Anote este no lugar dele.'
+        : 'É o que devolve seu acesso se você esquecer a senha. Ele não aparece de novo.'
+    );
+  } catch (falha) {
+    torradeira(falha.message, true);
+  } finally {
+    botao.disabled = false;
   }
 }
 
@@ -1410,13 +1589,17 @@ async function iniciar() {
   if (!sessao.usuario) {
     $('#tela-app').classList.add('escondido');
     $('#tela-entrada').classList.remove('escondido');
+    mostrarPainelEntrada('acesso');
     if (sessao.primeiroAcesso) {
       modoEntrada = 'criar';
       ajustarEntrada();
       $('#dica-entrada').textContent =
-        'Ninguém se cadastrou ainda. O primeiro acesso criado vira o comprador da turma.';
+        'Ninguém se cadastrou ainda. O primeiro acesso criado vira o espremedor da turma.';
+      // Sem ninguém cadastrado não há senha a recuperar.
+      $('#abrir-recuperacao').classList.add('escondido');
     } else {
       ajustarEntrada();
+      $('#abrir-recuperacao').classList.remove('escondido');
     }
     $('#campo-nome').focus();
     return;
@@ -1426,9 +1609,9 @@ async function iniciar() {
   $('#tela-app').classList.remove('escondido');
   $('#nome-usuario').textContent = sessao.usuario.nome;
 
-  const comprador = sessao.usuario.papel === 'comprador';
-  $('#selo-comprador').classList.toggle('escondido', !comprador);
-  for (const elemento of $$('.so-comprador')) elemento.classList.toggle('escondido', !comprador);
+  const espremedor = sessao.usuario.papel === 'espremedor';
+  $('#selo-espremedor').classList.toggle('escondido', !espremedor);
+  for (const elemento of $$('.so-espremedor')) elemento.classList.toggle('escondido', !espremedor);
 
   await carregarProdutos();
   await carregarMeuPedido();
@@ -1449,12 +1632,50 @@ $('#aba-criar').addEventListener('click', () => {
   modoEntrada = 'criar';
   ajustarEntrada();
 });
-$('#botao-entrada').addEventListener('click', enviarEntrada);
-for (const campo of ['#campo-nome', '#campo-senha']) {
-  $(campo).addEventListener('keydown', (evento) => {
-    if (evento.key === 'Enter') enviarEntrada();
+
+// O submit do form cobre o clique no botão e o Enter em qualquer campo, e é o
+// que faz o navegador oferecer para guardar a senha.
+$('#forma-entrada').addEventListener('submit', enviarEntrada);
+$('#forma-recuperacao').addEventListener('submit', enviarRecuperacao);
+
+$('#abrir-recuperacao').addEventListener('click', () => mostrarPainelEntrada('recuperacao'));
+$('#voltar-entrada').addEventListener('click', () => mostrarPainelEntrada('acesso'));
+
+/** O olho que mostra a senha. Ajuda em teclado de celular, onde errar é fácil. */
+for (const botao of $$('.olho')) {
+  botao.addEventListener('click', () => {
+    const campo = $(`#${botao.dataset.ver}`);
+    const escondida = campo.type === 'password';
+    campo.type = escondida ? 'text' : 'password';
+    botao.setAttribute('aria-pressed', String(escondida));
+    botao.setAttribute('aria-label', escondida ? 'Esconder a senha' : 'Mostrar a senha');
+    campo.focus();
   });
 }
+
+/**
+ * Vai pondo os traços conforme a pessoa digita o código.
+ *
+ * O traço só entra depois de um grupo de 4 que tenha algo em seguida, senão
+ * apagar o último caractere recolocaria o traço e o campo travaria.
+ */
+$('#rec-codigo').addEventListener('input', (evento) => {
+  const limpo = evento.target.value.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 16);
+  evento.target.value = limpo.replace(/(.{4})(?=.)/g, '$1-');
+});
+
+$('#guardei-codigo').addEventListener('click', () => $('#janela-codigo').close());
+
+$('#copiar-codigo').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(codigoNaTela);
+    torradeira('Código copiado. Guarde num lugar que você lembre.');
+  } catch {
+    prompt('Copie seu código de recuperação:', codigoNaTela);
+  }
+});
+
+$('#botao-gerar-codigo').addEventListener('click', gerarMeuCodigo);
 
 $('#navegacao').addEventListener('click', (evento) => {
   const botao = evento.target.closest('button[data-aba]');
@@ -1526,7 +1747,7 @@ $('#lista-anteriores').addEventListener('click', async (evento) => {
       method: 'POST',
       corpo: { pago: !rodada.pagoEm, rodada: rodadaId }
     });
-    torradeira(rodada.pagoEm ? 'Aviso de pagamento desfeito.' : 'Avisado. O comprador vai confirmar.');
+    torradeira(rodada.pagoEm ? 'Aviso de pagamento desfeito.' : 'Avisado. O espremedor vai confirmar.');
     await carregarAnteriores();
     desenharAnteriores();
     pedirAjusteDoPainel();
@@ -1549,7 +1770,7 @@ $('#botao-paguei').addEventListener('click', async () => {
     });
     estado.pedido = resposta.pedido;
     desenharPagamento();
-    torradeira(resposta.pedido.pagoEm ? 'Avisado. O comprador vai confirmar.' : 'Aviso de pagamento desfeito.');
+    torradeira(resposta.pedido.pagoEm ? 'Avisado. O espremedor vai confirmar.' : 'Aviso de pagamento desfeito.');
   } catch (falha) {
     botao.disabled = false;
     torradeira(falha.message, true);

@@ -79,6 +79,112 @@ function senhaConfere(senha, guardada) {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Código de recuperação                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Sem 0/O, 1/I/L: o código é feito para ser anotado num papel e digitado
+ * depois, e esses pares se confundem em qualquer letra manuscrita.
+ */
+const ALFABETO_CODIGO = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+
+/** Maior múltiplo de 31 que cabe num byte — ver o sorteio abaixo. */
+const CORTE_SEM_VICIO = 248;
+
+/**
+ * Um código no formato ABCD-EFGH-JKMN-PQRS.
+ *
+ * O byte sorteado que cair acima do último múltiplo inteiro do alfabeto é
+ * descartado em vez de entrar por resto: 256 não divide 31, então `byte % 31`
+ * puxado direto faria as primeiras letras saírem com mais frequência que as
+ * últimas. São 31^16 combinações, o que torna adivinhar inviável.
+ */
+function gerarCodigoRecuperacao() {
+  const letras = [];
+  while (letras.length < 16) {
+    for (const byte of crypto.randomBytes(32)) {
+      if (letras.length >= 16) break;
+      if (byte >= CORTE_SEM_VICIO) continue;
+      letras.push(ALFABETO_CODIGO[byte % ALFABETO_CODIGO.length]);
+    }
+  }
+  return letras.join('').match(/.{4}/g).join('-');
+}
+
+/** Aceita o código com ou sem traço, em maiúscula ou minúscula. */
+function normalizarCodigo(bruto) {
+  return String(bruto || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
+}
+
+/** Gera, guarda o resumo e devolve o código em texto — a única vez que ele existe. */
+async function renovarRecuperacao(usuarioId) {
+  const codigo = gerarCodigoRecuperacao();
+  await banco.gravarRecuperacao(usuarioId, embaralharSenha(normalizarCodigo(codigo)));
+  return codigo;
+}
+
+/* ------------------------------------------------------------------ */
+/* Trava de tentativas                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Segura quem fica tentando senha ou código no chute.
+ *
+ * O cadastro é aberto e a senha mínima tem 4 caracteres, então sem nenhuma
+ * trava dá para varrer as combinações de alguém em pouco tempo. A conta fica na
+ * memória do processo, e não no banco: um contador de tentativas não vale uma
+ * ida ao banco por chamada, e perder isso num deploy é aceitável — o ataque que
+ * a trava atrapalha leva bem mais tempo que o intervalo entre dois deploys.
+ */
+const TENTATIVAS_ATE_TRAVAR = 5;
+const TRAVA_MS = 60 * 1000;
+const LIMITE_DE_CHAVES = 500;
+
+const tentativasPorChave = new Map();
+
+/** Quanto tempo falta para a chave poder tentar de novo. 0 = pode agora. */
+function esperaObrigatoria(chave) {
+  const registro = tentativasPorChave.get(chave);
+  if (!registro) return 0;
+  const restante = registro.ate - Date.now();
+  if (restante <= 0) {
+    tentativasPorChave.delete(chave);
+    return 0;
+  }
+  return registro.falhas >= TENTATIVAS_ATE_TRAVAR ? restante : 0;
+}
+
+function anotarFalha(chave) {
+  // O mapa não pode crescer sem fim com nome inventado por quem está tentando.
+  if (tentativasPorChave.size > LIMITE_DE_CHAVES) {
+    const agora = Date.now();
+    for (const [outra, registro] of tentativasPorChave) {
+      if (registro.ate <= agora) tentativasPorChave.delete(outra);
+    }
+  }
+  const registro = tentativasPorChave.get(chave) || { falhas: 0, ate: 0 };
+  registro.falhas += 1;
+  registro.ate = Date.now() + TRAVA_MS;
+  tentativasPorChave.set(chave, registro);
+}
+
+function limparFalhas(chave) {
+  tentativasPorChave.delete(chave);
+}
+
+/** Responde 429 e devolve true quando a chave está de castigo. */
+function travouPorTentativas(resposta, chave) {
+  const espera = esperaObrigatoria(chave);
+  if (!espera) return false;
+  erro(
+    resposta,
+    429,
+    `Muitas tentativas seguidas. Espere ${Math.ceil(espera / 1000)} segundos e tente de novo.`
+  );
+  return true;
+}
+
 function criarRodada(nome) {
   return {
     id: novoId(),
@@ -365,7 +471,7 @@ async function pixParaPagar(valor) {
   const chave = await banco.lerConfiguracao('pix_chave');
   if (!chave) return null;
 
-  const nome = (await banco.lerConfiguracao('pix_nome')) || 'Comprador';
+  const nome = (await banco.lerConfiguracao('pix_nome')) || 'Espremedor';
   const cidade = (await banco.lerConfiguracao('pix_cidade')) || 'BRASIL';
   const brcode = pix.montarBrCode({ chave, nome, cidade, valor });
 
@@ -446,7 +552,7 @@ async function tratarApi(requisicao, resposta, url) {
   const rota = url.pathname;
   const metodo = requisicao.method;
   const usuario = await usuarioDaRequisicao(requisicao);
-  const eComprador = usuario && usuario.papel === 'comprador';
+  const eEspremedor = usuario && usuario.papel === 'espremedor';
 
   const exigeLogin = () => {
     if (!usuario) {
@@ -455,10 +561,10 @@ async function tratarApi(requisicao, resposta, url) {
     }
     return true;
   };
-  const exigeComprador = () => {
+  const exigeEspremedor = () => {
     if (!exigeLogin()) return false;
-    if (!eComprador) {
-      erro(resposta, 403, 'Só quem tem o perfil de comprador pode fazer isso.');
+    if (!eEspremedor) {
+      erro(resposta, 403, 'Só quem tem o perfil de espremedor pode fazer isso.');
       return false;
     }
     return true;
@@ -479,27 +585,110 @@ async function tratarApi(requisicao, resposta, url) {
       nome,
       chave: chaveLogin(nome),
       senha: embaralharSenha(senha),
-      papel: primeiro ? 'comprador' : 'colega'
+      papel: primeiro ? 'espremedor' : 'usuario'
     });
     if (!novo) return erro(resposta, 409, 'Esse nome já está cadastrado. Entre com ele ou use outro.');
 
     const token = await abrirSessao(novo.id);
     return responderJson(resposta, 201, {
       token,
-      usuario: { id: novo.id, nome: novo.nome, papel: novo.papel }
+      usuario: { id: novo.id, nome: novo.nome, papel: novo.papel },
+      // Vai na resposta do cadastro porque é a única hora em que o código existe
+      // em texto. A tela mostra e manda anotar; depois daqui só resta o resumo.
+      recuperacao: await renovarRecuperacao(novo.id)
     });
   }
 
   if (rota === '/api/entrar' && metodo === 'POST') {
     const corpo = await lerCorpo(requisicao);
-    const encontrado = await banco.usuarioPorChave(chaveLogin(corpo.nome || ''));
-    if (!encontrado || !senhaConfere(String(corpo.senha || ''), encontrado.senha)) {
-      return erro(resposta, 401, 'Nome ou senha não conferem.');
+    const chave = chaveLogin(corpo.nome || '');
+    if (travouPorTentativas(resposta, chave)) return;
+
+    const encontrado = await banco.usuarioPorChave(chave);
+
+    // Nome e senha errados dão respostas diferentes de propósito. Guardar
+    // segredo sobre quais nomes existem não protegeria nada: o cadastro é
+    // aberto, e quem quisesse a lista bastaria tentar criar acesso com o nome.
+    // Em troca, quem digitou o nome torto para de apanhar da tela.
+    if (!encontrado) {
+      anotarFalha(chave);
+      return responderJson(resposta, 404, {
+        erro: 'Não encontrei esse nome. Confira como você escreveu ou crie um acesso.',
+        naoCadastrado: true
+      });
     }
+    if (!senhaConfere(String(corpo.senha || ''), encontrado.senha)) {
+      anotarFalha(chave);
+      return responderJson(resposta, 401, {
+        erro: 'Senha errada. Se não lembra, use “Esqueci minha senha”.',
+        senhaErrada: true
+      });
+    }
+
+    limparFalhas(chave);
     const token = await abrirSessao(encontrado.id);
     return responderJson(resposta, 200, {
       token,
-      usuario: { id: encontrado.id, nome: encontrado.nome, papel: encontrado.papel }
+      usuario: { id: encontrado.id, nome: encontrado.nome, papel: encontrado.papel },
+      // A tela usa isto para oferecer a criação de um código a quem ainda não tem.
+      temRecuperacao: Boolean(encontrado.recuperacao)
+    });
+  }
+
+  /* ---- esqueci minha senha ---- */
+
+  /**
+   * A quem pedir socorro quando o código também se perdeu.
+   *
+   * Sem login: quem esqueceu a senha é justamente quem não consegue entrar.
+   */
+  if (rota === '/api/espremedores' && metodo === 'GET') {
+    return responderJson(resposta, 200, { espremedores: await banco.listarEspremedores() });
+  }
+
+  /**
+   * Redefinir a senha com o código de recuperação.
+   *
+   * O código é de uso único: ao dar certo, um novo é gerado e devolvido, as
+   * sessões antigas caem e a pessoa já entra com a senha nova.
+   */
+  if (rota === '/api/recuperar' && metodo === 'POST') {
+    const corpo = await lerCorpo(requisicao);
+    const chave = chaveLogin(corpo.nome || '');
+    if (travouPorTentativas(resposta, chave)) return;
+
+    const novaSenha = String(corpo.novaSenha || '');
+    if (novaSenha.length < 4) return erro(resposta, 400, 'A nova senha precisa de pelo menos 4 caracteres.');
+
+    const encontrado = await banco.usuarioPorChave(chave);
+    if (!encontrado) {
+      anotarFalha(chave);
+      return responderJson(resposta, 404, {
+        erro: 'Não encontrei esse nome. Confira como você escreveu.',
+        naoCadastrado: true
+      });
+    }
+    if (!encontrado.recuperacao) {
+      return responderJson(resposta, 409, {
+        erro: 'Esse acesso ainda não tem código de recuperação. Peça a um espremedor para redefinir sua senha.',
+        semCodigo: true
+      });
+    }
+    if (!senhaConfere(normalizarCodigo(corpo.codigo), encontrado.recuperacao)) {
+      anotarFalha(chave);
+      return erro(resposta, 401, 'Esse código não confere. Confira as letras que você anotou.');
+    }
+
+    limparFalhas(chave);
+    await banco.trocarSenha(encontrado.id, embaralharSenha(novaSenha));
+    // Antes de abrir a sessão nova: a pessoa está aqui porque perdeu o controle
+    // do acesso, então tudo o que estava logado antes precisa parar de valer.
+    await banco.fecharSessoesDoUsuario(encontrado.id);
+
+    return responderJson(resposta, 200, {
+      token: await abrirSessao(encontrado.id),
+      usuario: { id: encontrado.id, nome: encontrado.nome, papel: encontrado.papel },
+      recuperacao: await renovarRecuperacao(encontrado.id)
     });
   }
 
@@ -512,7 +701,15 @@ async function tratarApi(requisicao, resposta, url) {
   if (rota === '/api/sessao' && metodo === 'GET') {
     const aberta = await banco.garantirRodadaAberta(criarRodada);
     return responderJson(resposta, 200, {
-      usuario: usuario ? { id: usuario.id, nome: usuario.nome, papel: usuario.papel } : null,
+      usuario: usuario
+        ? {
+            id: usuario.id,
+            nome: usuario.nome,
+            papel: usuario.papel,
+            // Só o "tem ou não tem": o código nunca volta do banco em texto.
+            temRecuperacao: Boolean(usuario.recuperacao)
+          }
+        : null,
       primeiroAcesso: (await banco.contarUsuarios()) === 0,
       rodada: aberta ? { id: aberta.id, nome: aberta.nome, observacao: aberta.observacao } : null
     });
@@ -523,13 +720,13 @@ async function tratarApi(requisicao, resposta, url) {
   if (rota === '/api/produtos' && metodo === 'GET') {
     if (!exigeLogin()) return;
     return responderJson(resposta, 200, {
-      produtos: await produtosComAnalise({ soAtivos: !eComprador }),
+      produtos: await produtosComAnalise({ soAtivos: !eEspremedor }),
       sincronizacao: await banco.lerSincronizacao()
     });
   }
 
   if (rota === '/api/produtos/sincronizar' && metodo === 'POST') {
-    if (!exigeComprador()) return;
+    if (!exigeEspremedor()) return;
     const registro = await rodarSincronizacao(usuario.nome);
     return responderJson(resposta, registro.situacao === 'ok' ? 200 : 502, {
       sincronizacao: registro,
@@ -538,7 +735,7 @@ async function tratarApi(requisicao, resposta, url) {
   }
 
   if (rota === '/api/produtos' && metodo === 'POST') {
-    if (!exigeComprador()) return;
+    if (!exigeEspremedor()) return;
     const corpo = await lerCorpo(requisicao);
     const nome = String(corpo.nome || '').trim();
     if (!nome) return erro(resposta, 400, 'Dê um nome ao produto.');
@@ -563,7 +760,7 @@ async function tratarApi(requisicao, resposta, url) {
 
   const casaProduto = rota.match(/^\/api\/produtos\/([\w-]+)$/);
   if (casaProduto && (metodo === 'PATCH' || metodo === 'DELETE')) {
-    if (!exigeComprador()) return;
+    if (!exigeEspremedor()) return;
 
     if (metodo === 'DELETE') {
       const foi = await banco.removerProduto(casaProduto[1]);
@@ -614,13 +811,13 @@ async function tratarApi(requisicao, resposta, url) {
   /**
    * O melhor dia para comprar, e se hoje é um bom momento.
    *
-   * Só para o comprador: é ele quem escolhe a hora de fechar a rodada e passar o
+   * Só para o espremedor: é ele quem escolhe a hora de fechar a rodada e passar o
    * cartão. Enquanto não houver histórico que sustente a conclusão, a resposta
    * vem com `suficiente: false` e o motivo — a tela diz "ainda não sei" em vez de
    * apontar um dia sorteado no ruído.
    */
   if (rota === '/api/melhor-dia' && metodo === 'GET') {
-    if (!exigeComprador()) return;
+    if (!exigeEspremedor()) return;
     const historico = await banco.historicoDeTodos(inicioDaJanela());
     const aberta = await banco.garantirRodadaAberta(criarRodada);
     const resumo = resumoDaRodada(await banco.pedidosDaRodada(aberta.id));
@@ -688,7 +885,7 @@ async function tratarApi(requisicao, resposta, url) {
    * Minhas rodadas: o que pedi em cada uma e quanto ainda devo.
    *
    * Fechar a rodada não perdoa a dívida. Sem esta rota, quem não pagou perdia
-   * de vista o pedido e o Pix assim que o comprador fechava para adiantar a
+   * de vista o pedido e o Pix assim que o espremedor fechava para adiantar a
    * compra.
    */
   if (rota === '/api/minhas-rodadas' && metodo === 'GET') {
@@ -700,7 +897,7 @@ async function tratarApi(requisicao, resposta, url) {
       lista.push({
         ...pedido,
         total,
-        // O Pix só faz sentido enquanto o comprador não confirmou o recebimento.
+        // O Pix só faz sentido enquanto o espremedor não confirmou o recebimento.
         pix: pedido.confirmadoEm ? null : await pixParaPagar(total)
       });
     }
@@ -714,14 +911,14 @@ async function tratarApi(requisicao, resposta, url) {
 
   /**
    * A entrega de cada rodada. Todo mundo vê: quem pediu quer saber onde as
-   * cápsulas estão. Só o comprador escreve o código.
+   * cápsulas estão. Só o espremedor escreve o código.
    */
   if (rota === '/api/rastreio' && metodo === 'GET') {
     if (!exigeLogin()) return;
     const rodadas = await banco.listarRodadas();
     return responderJson(resposta, 200, {
       site: SITE_RASTREIO,
-      podeEditar: eComprador,
+      podeEditar: eEspremedor,
       rodadas: rodadas.map((r) =>
         comLinkDeRastreio({
           id: r.id,
@@ -738,7 +935,7 @@ async function tratarApi(requisicao, resposta, url) {
 
   const casaRastreio = rota.match(/^\/api\/rodadas\/([\w-]+)\/rastreio$/);
   if (casaRastreio && metodo === 'PUT') {
-    if (!exigeComprador()) return;
+    if (!exigeEspremedor()) return;
     const corpo = await lerCorpo(requisicao);
     const bruto = String(corpo.rastreio || '').trim();
 
@@ -753,9 +950,9 @@ async function tratarApi(requisicao, resposta, url) {
     return responderJson(resposta, 200, { rodada: comLinkDeRastreio(rodada) });
   }
 
-  /** Pendências de rodadas já fechadas — a lista de cobrança do comprador. */
+  /** Pendências de rodadas já fechadas — a lista de cobrança do espremedor. */
   if (rota === '/api/pendencias' && metodo === 'GET') {
-    if (!exigeComprador()) return;
+    if (!exigeEspremedor()) return;
     const pedidos = await banco.pendencias();
     const lista = pedidos.map((p) => ({ ...p, total: totalDoPedido(p) }));
     return responderJson(resposta, 200, {
@@ -777,7 +974,7 @@ async function tratarApi(requisicao, resposta, url) {
 
   const casaPagamento = rota.match(/^\/api\/pedidos\/([\w-]+)\/pagamento$/);
   if (casaPagamento && metodo === 'PATCH') {
-    if (!exigeComprador()) return;
+    if (!exigeEspremedor()) return;
     const corpo = await lerCorpo(requisicao);
     const alvo = corpo.rodada ? await banco.rodadaPorId(String(corpo.rodada)) : await banco.garantirRodadaAberta(criarRodada);
     if (!alvo) return erro(resposta, 404, 'Rodada não encontrada.');
@@ -786,10 +983,10 @@ async function tratarApi(requisicao, resposta, url) {
     return responderJson(resposta, 200, { pedido });
   }
 
-  /* ---- fechamento (comprador) ---- */
+  /* ---- fechamento (espremedor) ---- */
 
   if (rota === '/api/fechamento' && metodo === 'GET') {
-    if (!exigeComprador()) return;
+    if (!exigeEspremedor()) return;
     const aberta = await banco.garantirRodadaAberta(criarRodada);
     return responderJson(resposta, 200, {
       rodada: { id: aberta.id, nome: aberta.nome, observacao: aberta.observacao, criadaEm: aberta.criadaEm },
@@ -798,7 +995,7 @@ async function tratarApi(requisicao, resposta, url) {
   }
 
   if (rota === '/api/fechamento.csv' && metodo === 'GET') {
-    if (!exigeComprador()) return;
+    if (!exigeEspremedor()) return;
     const pedida = url.searchParams.get('rodada');
     const alvo = pedida ? await banco.rodadaPorId(pedida) : await banco.garantirRodadaAberta(criarRodada);
     if (!alvo) return erro(resposta, 404, 'Rodada não encontrada.');
@@ -811,7 +1008,7 @@ async function tratarApi(requisicao, resposta, url) {
   }
 
   if (rota === '/api/rodadas' && metodo === 'GET') {
-    if (!exigeComprador()) return;
+    if (!exigeEspremedor()) return;
     const rodadas = await banco.listarRodadas();
     const lista = [];
     for (const r of rodadas) {
@@ -832,7 +1029,7 @@ async function tratarApi(requisicao, resposta, url) {
 
   const casaRodada = rota.match(/^\/api\/rodadas\/([\w-]+)$/);
   if (casaRodada && metodo === 'GET') {
-    if (!exigeComprador()) return;
+    if (!exigeEspremedor()) return;
     const alvo = await banco.rodadaPorId(casaRodada[1]);
     if (!alvo) return erro(resposta, 404, 'Rodada não encontrada.');
     const pedidos = await banco.pedidosDaRodada(alvo.id);
@@ -843,7 +1040,7 @@ async function tratarApi(requisicao, resposta, url) {
   }
 
   if (rota === '/api/rodadas/fechar' && metodo === 'POST') {
-    if (!exigeComprador()) return;
+    if (!exigeEspremedor()) return;
     const corpo = await lerCorpo(requisicao);
     const aberta = await banco.garantirRodadaAberta(criarRodada);
     await banco.fecharRodada(aberta.id, usuario.nome, criarRodada(String(corpo.proximaRodada || '').trim()));
@@ -851,7 +1048,7 @@ async function tratarApi(requisicao, resposta, url) {
   }
 
   if (rota === '/api/rodadas/atual' && metodo === 'PATCH') {
-    if (!exigeComprador()) return;
+    if (!exigeEspremedor()) return;
     const corpo = await lerCorpo(requisicao);
     const aberta = await banco.garantirRodadaAberta(criarRodada);
     const mudancas = {};
@@ -866,7 +1063,7 @@ async function tratarApi(requisicao, resposta, url) {
   /* ---- pessoas ---- */
 
   if (rota === '/api/usuarios' && metodo === 'GET') {
-    if (!exigeComprador()) return;
+    if (!exigeEspremedor()) return;
     const usuarios = await banco.listarUsuarios();
     return responderJson(resposta, 200, {
       usuarios: usuarios.map((u) => ({ id: u.id, nome: u.nome, papel: u.papel, criadoEm: u.criadoEm }))
@@ -875,7 +1072,7 @@ async function tratarApi(requisicao, resposta, url) {
 
   const casaUsuario = rota.match(/^\/api\/usuarios\/([\w-]+)$/);
   if (casaUsuario && (metodo === 'PATCH' || metodo === 'DELETE')) {
-    if (!exigeComprador()) return;
+    if (!exigeEspremedor()) return;
     const alvo = await banco.usuarioPorId(casaUsuario[1]);
     if (!alvo) return erro(resposta, 404, 'Pessoa não encontrada.');
 
@@ -887,15 +1084,18 @@ async function tratarApi(requisicao, resposta, url) {
 
     const corpo = await lerCorpo(requisicao);
     let atualizado = alvo;
-    if (corpo.papel === 'comprador' || corpo.papel === 'colega') {
-      if (corpo.papel === 'colega' && alvo.papel === 'comprador' && (await banco.contarCompradores()) === 1) {
-        return erro(resposta, 400, 'Deixe pelo menos uma pessoa como comprador.');
+    if (corpo.papel === 'espremedor' || corpo.papel === 'usuario') {
+      if (corpo.papel === 'usuario' && alvo.papel === 'espremedor' && (await banco.contarEspremedores()) === 1) {
+        return erro(resposta, 400, 'Deixe pelo menos uma pessoa como espremedor.');
       }
       atualizado = await banco.trocarPapel(alvo.id, corpo.papel);
     }
     if (corpo.novaSenha) {
       if (String(corpo.novaSenha).length < 4) return erro(resposta, 400, 'A senha precisa de pelo menos 4 caracteres.');
       atualizado = await banco.trocarSenha(alvo.id, embaralharSenha(String(corpo.novaSenha)));
+      // Senha redefinida por outra pessoa derruba as sessões de quem a usava:
+      // se o acesso foi parar em mãos erradas, é isso que corta o estrago.
+      await banco.fecharSessoesDoUsuario(alvo.id);
     }
     return responderJson(resposta, 200, {
       usuario: { id: atualizado.id, nome: atualizado.nome, papel: atualizado.papel }
@@ -910,7 +1110,30 @@ async function tratarApi(requisicao, resposta, url) {
       return erro(resposta, 401, 'A senha atual não confere.');
     }
     await banco.trocarSenha(usuario.id, embaralharSenha(String(corpo.nova)));
-    return responderJson(resposta, 200, { ok: true });
+
+    // Trocar a senha derruba o que estava logado em outros aparelhos. Como isso
+    // levaria junto a sessão de quem está trocando, uma nova é aberta e devolvida
+    // — quem trocou continua na tela, o resto precisa entrar de novo.
+    await banco.fecharSessoesDoUsuario(usuario.id);
+    return responderJson(resposta, 200, { ok: true, token: await abrirSessao(usuario.id) });
+  }
+
+  /**
+   * Gerar (ou trocar) o próprio código de recuperação.
+   *
+   * Pede a senha atual de novo mesmo já estando logado: um aparelho esquecido
+   * aberto não pode virar um código de recuperação anotado por outra pessoa.
+   */
+  if (rota === '/api/minha-recuperacao' && metodo === 'POST') {
+    if (!exigeLogin()) return;
+    const corpo = await lerCorpo(requisicao);
+    if (!senhaConfere(String(corpo.senha || ''), usuario.senha)) {
+      return erro(resposta, 401, 'A senha não confere.');
+    }
+    return responderJson(resposta, 200, {
+      recuperacao: await renovarRecuperacao(usuario.id),
+      substituiu: Boolean(usuario.recuperacao)
+    });
   }
 
   return erro(resposta, 404, 'Rota não encontrada.');
