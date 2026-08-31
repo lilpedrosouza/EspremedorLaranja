@@ -21,6 +21,7 @@ const banco = require('./lib/banco');
 const pix = require('./lib/pix');
 const precos = require('./lib/precos');
 const email = require('./lib/email');
+const emailModelo = require('./lib/email-modelo');
 const qrcode = require('qrcode');
 
 // PORT vem primeiro: é o que a hospedagem define, e ela precisa ganhar de um
@@ -42,6 +43,11 @@ const JANELA_PRECOS_DIAS = 180;
 // folga para a pessoa ver o e-mail e é curto para um link esquecido na caixa de
 // entrada não virar chave da conta meses depois.
 const VALIDADE_DO_LINK = 60 * 60 * 1000;
+
+// Fuso de Brasília, para escrever horas no e-mail. Mesma constante e mesmo
+// motivo de `lib/precos.js`: a Railway roda em UTC e a hora precisa ser a de
+// quem lê. O Brasil não tem horário de verão desde 2019.
+const FUSO_BRASIL_MS = 3 * 60 * 60 * 1000;
 
 // Endereço público da tela, usado para montar o link do e-mail. Precisa ser
 // escrito à mão porque o backend pode servir a tela e o front pode estar no
@@ -162,50 +168,50 @@ function montarLink(token) {
   return `${enderecoDaTela()}/?redefinir=${encodeURIComponent(token)}`;
 }
 
-function escaparHtml(texto) {
-  return String(texto).replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
-  );
+/**
+ * A hora no relógio de quem vai ler, no formato 17h51.
+ *
+ * Deslocamento fixo de -3, pelo mesmo motivo de `lib/precos.js`: o servidor roda
+ * em UTC na Railway, e "o link vale até as 14h" precisa ser a hora de Brasília,
+ * não a de Londres. O Brasil não tem horário de verão desde 2019.
+ */
+function horaDeBrasilia(quando) {
+  const data = new Date(new Date(quando).getTime() - FUSO_BRASIL_MS);
+  return `${String(data.getUTCHours()).padStart(2, '0')}h${String(data.getUTCMinutes()).padStart(2, '0')}`;
 }
 
 /**
  * Monta e manda o e-mail com o link.
  *
- * O texto simples vai junto do HTML de propósito: cliente de e-mail que não
- * mostra HTML, e leitor de tela, ficam com uma versão legível em vez de nada.
+ * O texto de verdade mora aqui; o visual, em `lib/email-modelo.js`. As duas
+ * versões da mensagem, HTML e texto puro, saem da mesma estrutura — cliente que
+ * não mostra HTML, e leitor de tela, ficam com uma versão legível em vez de nada.
  */
 async function enviarLinkDeRedefinicao(usuario, token) {
   const link = montarLink(token);
-  const minutos = Math.round(VALIDADE_DO_LINK / 60000);
+  const ate = horaDeBrasilia(Date.now() + VALIDADE_DO_LINK);
 
-  const texto = [
-    `Oi, ${usuario.nome}.`,
-    '',
-    'Alguém pediu para trocar a senha do seu acesso ao Espremedor de Laranja.',
-    'Abra o endereço abaixo para escolher uma nova:',
-    '',
-    link,
-    '',
-    `O link vale por ${minutos} minutos e só funciona uma vez.`,
-    'Se não foi você que pediu, ignore este e-mail — sua senha continua a mesma.'
-  ].join('\n');
-
-  const html = `<div style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:15px;line-height:1.55;color:#1d1f22;max-width:520px">
-  <p>Oi, ${escaparHtml(usuario.nome)}.</p>
-  <p>Alguém pediu para trocar a senha do seu acesso ao <strong>Espremedor de Laranja</strong>.</p>
-  <p style="margin:26px 0">
-    <a href="${escaparHtml(link)}" style="background:#a8410a;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;display:inline-block;font-weight:600">Escolher uma nova senha</a>
-  </p>
-  <p style="color:#6b7076;font-size:13px">Se o botão não abrir, copie e cole este endereço:<br>
-    <span style="word-break:break-all">${escaparHtml(link)}</span></p>
-  <p style="color:#6b7076;font-size:13px">O link vale por ${minutos} minutos e só funciona uma vez.<br>
-    Se não foi você que pediu, ignore este e-mail — sua senha continua a mesma.</p>
-</div>`;
+  // Dizer a hora exata em vez de "vale por 60 minutos": quem abre o e-mail meia
+  // hora depois não precisa fazer a conta para saber se ainda dá tempo.
+  const { html, texto } = emailModelo.montar({
+    resumo: `O link vale até as ${ate} e funciona uma vez só.`,
+    saudacao: `Oi, ${usuario.nome}.`,
+    paragrafos: [
+      'Alguém pediu uma senha nova para o seu acesso ao Espremedor de Laranja. Se foi você, é só clicar no botão abaixo e escolher a nova — você entra direto, sem precisar lembrar da antiga.'
+    ],
+    acao: { texto: 'Escolher minha senha', url: link },
+    alternativa: 'Se o botão não abrir, copie o endereço abaixo e cole na barra do navegador:',
+    rodape: [
+      `O link vale até as ${ate} e funciona uma vez só. Depois disso é só pedir outro na tela de entrada.`,
+      'Não pediu nada disso? Pode ignorar este e-mail. Sua senha continua a mesma e o link se apaga sozinho.',
+      'Quando você trocar a senha, os outros aparelhos onde estava logado vão pedir para entrar de novo.'
+    ]
+  });
 
   await email.enviar({
     para: usuario.email,
     nomeDoDestinatario: usuario.nome,
-    assunto: 'Trocar sua senha do Espremedor de Laranja',
+    assunto: 'Escolha uma nova senha',
     texto,
     html
   });

@@ -66,9 +66,12 @@ só os dias de mudança diriam qual dia o site mexe no preço, não qual dia é 
 função devolve um estado de "ainda não sei" — `situacao: 'sem-dados'`, `suficiente: false`
 — em vez de concluir com pouca amostra.
 
-**`lib/email.js`** — envio pela API do Brevo, HTTP puro com `fetch`, sem dependência
-nova. Só monta a requisição e traduz a falha para português; o texto do e-mail mora em
-`servidor.js`. `configurado()` deixa todo o resto do sistema funcionar sem e-mail.
+**`lib/email.js`** e **`lib/email-modelo.js`** — o primeiro é o transporte (API do Brevo,
+HTTP puro com `fetch`); o segundo é o visual, e monta HTML e texto puro da mesma
+estrutura para as duas versões não divergirem. E-mail não aceita `<style>`, SVG, fonte
+da web nem flexbox — daí tabela, estilo inline e o 🍊 no lugar do logo. O texto de cada
+mensagem mora em `servidor.js`, e `configurado()` deixa todo o resto do sistema
+funcionar sem e-mail nenhum.
 
 **`lib/pix.js`** — monta o BR Code (EMV®QRCPS) com CRC16/CCITT-FALSE. Sem dependência
 externa; o QR em SVG sai do `qrcode` em `servidor.js`.
