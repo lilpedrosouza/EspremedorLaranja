@@ -41,6 +41,10 @@
           <label for="campo-nome">Seu nome</label>
           <input id="campo-nome" name="username" autocomplete="username" placeholder="Como o pessoal te chama">
         </div>
+        <div class="campo escondido" id="campo-email-caixa">
+          <label for="campo-email">Seu e-mail</label>
+          <input id="campo-email" name="email" type="email" autocomplete="email" inputmode="email" placeholder="para recuperar a senha depois">
+        </div>
         <div class="campo">
           <label for="campo-senha">Senha</label>
           <div class="campo-senha">
@@ -60,11 +64,23 @@
     <!-- esqueci minha senha -->
     <div id="painel-recuperacao" class="escondido">
       <h2 class="titulo-painel">Esqueci minha senha</h2>
-      <p class="abertura">Use o código de recuperação que você anotou quando criou o acesso.</p>
+      <p class="abertura" id="abertura-recuperacao">Mandamos um link para o seu e-mail. Ele vale por uma hora.</p>
 
       <div id="erro-recuperacao" class="recado-erro escondido" role="alert"></div>
+      <div id="aviso-recuperacao" class="recado-bom escondido" role="status"></div>
 
-      <form id="forma-recuperacao" novalidate>
+      <form id="forma-esqueci" novalidate>
+        <div class="campo">
+          <label for="esq-quem">Seu nome ou e-mail</label>
+          <input id="esq-quem" name="username" autocomplete="username" placeholder="Como você se cadastrou">
+        </div>
+        <button type="submit" id="botao-esqueci" class="botao largo">Enviar link por e-mail</button>
+      </form>
+
+      <div class="separador" id="separador-recuperacao"><span>ou</span></div>
+      <button type="button" class="link-discreto" id="abrir-codigo">Tenho um código de recuperação</button>
+
+      <form id="forma-recuperacao" class="escondido" novalidate>
         <div class="campo">
           <label for="rec-nome">Seu nome</label>
           <input id="rec-nome" name="username" autocomplete="username" placeholder="O mesmo de sempre">
@@ -85,8 +101,31 @@
         <button type="submit" id="botao-recuperar" class="botao largo">Trocar a senha e entrar</button>
       </form>
 
-      <p class="dica" id="dica-recuperacao">Perdeu o código? Peça a um espremedor para redefinir sua senha.</p>
+      <p class="dica" id="dica-recuperacao">Sem e-mail e sem código? Peça a um espremedor para redefinir sua senha.</p>
       <button type="button" class="link-discreto" id="voltar-entrada">Voltar para a entrada</button>
+    </div>
+
+    <!-- escolher nova senha, aberto pelo link do e-mail -->
+    <div id="painel-nova-senha" class="escondido">
+      <h2 class="titulo-painel">Escolha uma nova senha</h2>
+      <p class="abertura" id="abertura-nova-senha">Conferindo o link…</p>
+
+      <div id="erro-nova-senha" class="recado-erro escondido" role="alert"></div>
+
+      <form id="forma-nova-senha" class="escondido" novalidate>
+        <div class="campo">
+          <label for="nova-senha-link">Nova senha</label>
+          <div class="campo-senha">
+            <input id="nova-senha-link" type="password" autocomplete="new-password" placeholder="Mínimo de 4 caracteres">
+            <button type="button" class="olho" data-ver="nova-senha-link" aria-pressed="false" aria-label="Mostrar a senha">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M1.5 10S4.5 4.5 10 4.5 18.5 10 18.5 10 15.5 15.5 10 15.5 1.5 10 1.5 10Z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
+          </div>
+        </div>
+        <button type="submit" id="botao-nova-senha" class="botao largo">Salvar e entrar</button>
+      </form>
+
+      <button type="button" class="link-discreto" id="voltar-da-nova-senha">Voltar para a entrada</button>
     </div>
   </div>
 </section>
@@ -324,6 +363,22 @@
           <input id="senha-nova" type="password" autocomplete="new-password">
         </div>
         <button type="button" class="botao claro" id="botao-trocar-senha">Trocar senha</button>
+      </div>
+    </section>
+
+    <section class="bloco">
+      <h2>Meu e-mail</h2>
+      <p class="subtitulo" id="estado-email"></p>
+      <div class="linha-campos">
+        <div class="campo">
+          <label for="meu-email">E-mail</label>
+          <input id="meu-email" type="email" autocomplete="email" inputmode="email" placeholder="voce@exemplo.com">
+        </div>
+        <div class="campo">
+          <label for="senha-para-email">Confirme sua senha</label>
+          <input id="senha-para-email" type="password" autocomplete="current-password">
+        </div>
+        <button type="button" class="botao claro" id="botao-salvar-email">Salvar e-mail</button>
       </div>
     </section>
 

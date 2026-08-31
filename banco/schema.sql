@@ -27,6 +27,29 @@ update usuarios set papel = 'espremedor' where papel = 'comprador';
 alter table usuarios add column if not exists recuperacao    text;
 alter table usuarios add column if not exists recuperacao_em timestamptz;
 
+-- E-mail: para onde vai o link de redefinição de senha. Fica nulo em quem se
+-- cadastrou antes de existir o campo — o link só funciona para quem preencheu.
+alter table usuarios add column if not exists email text;
+
+-- Um e-mail por pessoa, sem diferenciar maiúscula de minúscula. Índice parcial
+-- porque nulo pode repetir: quem não informou não conflita com quem não informou.
+create unique index if not exists usuarios_email_unico
+  on usuarios (lower(email)) where email is not null;
+
+-- Links de redefinição de senha enviados por e-mail.
+--
+-- O `token` guarda o SHA-256 do que viaja no link, nunca o valor em si: quem
+-- lesse o banco poderia entrar na conta de qualquer um. Não precisa de scrypt
+-- como a senha, porque o token é sorteado com 256 bits e não há o que adivinhar.
+create table if not exists redefinicoes (
+  token      text        primary key,
+  usuario_id text        not null references usuarios(id) on delete cascade,
+  criada_em  timestamptz not null default now(),
+  usada_em   timestamptz
+);
+
+create index if not exists redefinicoes_por_usuario on redefinicoes (usuario_id);
+
 create table if not exists produtos (
   id           text primary key,
   nome         text          not null,

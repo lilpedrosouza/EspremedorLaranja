@@ -79,6 +79,10 @@ dados de verdade. Para uma rodada de teste, crie um segundo projeto no Supabase.
 | `ORIGENS_PERMITIDAS` | Endereços do front hospedado à parte, separados por vírgula. Vazio = só o front servido pelo próprio backend. |
 | `PORT` / `PORTA` | Porta. A Railway define sozinha. |
 | `SEM_SINCRONIA` | `1` desliga a leitura do site da Nescafé ao subir. |
+| `BREVO_API_KEY` | Chave da API do Brevo, para mandar o e-mail de "esqueci minha senha". Vazia = o fluxo cai no código de recuperação. |
+| `EMAIL_REMETENTE` | O endereço remetente, já verificado em Brevo → Senders. |
+| `EMAIL_REMETENTE_NOME` | Nome que aparece como remetente. Padrão: *Espremedor de Laranja*. |
+| `ENDERECO_DO_SITE` | Endereço público **da tela**, para montar o link do e-mail. Vazio = o primeiro de `ORIGENS_PERMITIDAS`. |
 
 Local elas saem do `.env` (que o Git ignora). Na Railway, do painel.
 
@@ -201,10 +205,50 @@ com um atalho para criar o acesso; quem erra a senha ouve isso e ganha o atalho
 para recuperar. Cinco tentativas erradas seguidas travam aquele nome por um
 minuto, para ninguém ficar chutando senha dos outros.
 
+### O link por e-mail
+
+O caminho principal. Quem cria acesso agora **informa um e-mail**, e é para lá que
+vai o link de redefinição.
+
+Na tela de entrada: **Esqueci minha senha** → escreva seu nome *ou* seu e-mail →
+o link chega na sua caixa. Ele **vale por uma hora e funciona uma vez só**; ao
+abri-lo você escolhe a senha nova e já entra. Pedir um link novo derruba o
+anterior, então o e-mail antigo na caixa de entrada não serve mais para nada.
+
+A resposta da tela é sempre a mesma — *"se houver um acesso com esse nome ou
+e-mail, o link foi enviado"* — exista a conta ou não. É diferente do que acontece
+ao entrar, onde a tela diz que não achou o nome, e é de propósito: o nome já era
+descobrível tentando criar um acesso, mas "este e-mail pertence a alguém daqui"
+não, e é dado de gente que talvez nem use o sistema.
+
+**Quem já tinha conta não tem e-mail cadastrado.** É só ir em *Minha conta* →
+**Meu e-mail**, preencher e confirmar a senha.
+
+#### Ligar o envio (uma vez só)
+
+Sem isto configurado, o botão de e-mail nem aparece e a tela oferece direto o
+código de recuperação. Nada quebra.
+
+1. Crie conta em [brevo.com](https://www.brevo.com) (o plano gratuito manda 300
+   e-mails por dia, para sempre).
+2. **Senders, Domains & Dedicated IPs → Senders → Add a sender**: ponha seu
+   e-mail mesmo e clique no link de confirmação que chega nele.
+3. **SMTP & API → API Keys → Generate a new API key**.
+4. Na Railway, em *Variables*:
+
+   ```
+   BREVO_API_KEY=xkeysib-...
+   EMAIL_REMETENTE=voce@gmail.com
+   ENDERECO_DO_SITE=https://lilpedrosouza.github.io/EspremedorLaranja
+   ```
+
+O `ENDERECO_DO_SITE` é o endereço **da tela**, que é para onde o link tem de
+levar — se o front está no GitHub Pages, é o de lá, e não o da Railway.
+
 ### O código de recuperação
 
-Como aqui ninguém cadastra e-mail, não há link de redefinição para mandar. No
-lugar disso, **ao criar o acesso você recebe um código** parecido com
+O caminho reserva, para quem não cadastrou e-mail ou não recebeu o link. **Ao
+criar o acesso você também recebe um código** parecido com
 
 ```
 K7HP-3QMD-XW9F-BTRJ
@@ -222,7 +266,7 @@ aparece na tela para você anotar no lugar do antigo.
 **Código de recuperação**, confirmar a senha e gerar o seu. Vale fazer hoje: sem
 código, esquecer a senha vira problema de outra pessoa resolver.
 
-### Perdi o código também
+### Perdi o e-mail e o código
 
 Aí é no braço: qualquer espremedor abre *Minha conta* → **Quem tem acesso** e
 clica em **Redefinir senha** ao lado do seu nome. A própria tela de recuperação

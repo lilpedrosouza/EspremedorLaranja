@@ -20,6 +20,7 @@ const catalogoNescafe = require('./lib/catalogo-nescafe');
 const banco = require('./lib/banco');
 const pix = require('./lib/pix');
 const precos = require('./lib/precos');
+const email = require('./lib/email');
 const qrcode = require('qrcode');
 
 // PORT vem primeiro: é o que a hospedagem define, e ela precisa ganhar de um
@@ -36,6 +37,17 @@ const INTERVALO_SINCRONIA = 12 * 60 * 60 * 1000; // 12 horas
 // preço de hoje pelo que o site cobrava há dois anos. Também é o que segura o
 // tamanho da consulta: o histórico inteiro cresce para sempre.
 const JANELA_PRECOS_DIAS = 180;
+
+// Quanto tempo o link de redefinição de senha vale. Uma hora é o costume: dá
+// folga para a pessoa ver o e-mail e é curto para um link esquecido na caixa de
+// entrada não virar chave da conta meses depois.
+const VALIDADE_DO_LINK = 60 * 60 * 1000;
+
+// Endereço público da tela, usado para montar o link do e-mail. Precisa ser
+// escrito à mão porque o backend pode servir a tela e o front pode estar no
+// GitHub Pages ao mesmo tempo — só quem configurou sabe para onde mandar. Sem
+// isso, cai no primeiro endereço de ORIGENS_PERMITIDAS.
+const ENDERECO_DO_SITE = (process.env.ENDERECO_DO_SITE || '').trim().replace(/\/$/, '');
 
 // Endereços do front que podem chamar esta API, separados por vírgula.
 // Ex.: ORIGENS_PERMITIDAS=https://lilpedrosouza.github.io,http://localhost:5173
@@ -122,6 +134,81 @@ async function renovarRecuperacao(usuarioId) {
   const codigo = gerarCodigoRecuperacao();
   await banco.gravarRecuperacao(usuarioId, embaralharSenha(normalizarCodigo(codigo)));
   return codigo;
+}
+
+/* ------------------------------------------------------------------ */
+/* Link de redefinição por e-mail                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * O resumo do token que fica guardado.
+ *
+ * SHA-256 basta aqui, sem scrypt: o token tem 256 bits sorteados, então não há
+ * o que adivinhar e não existe "senha fraca" para proteger. O scrypt só serviria
+ * para deixar a conferência lenta à toa.
+ */
+function resumoDoToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+
+/** Para onde o link do e-mail aponta. */
+function enderecoDaTela() {
+  if (ENDERECO_DO_SITE) return ENDERECO_DO_SITE;
+  if (ORIGENS.length) return ORIGENS[0];
+  return `http://localhost:${PORTA}`;
+}
+
+function montarLink(token) {
+  return `${enderecoDaTela()}/?redefinir=${encodeURIComponent(token)}`;
+}
+
+function escaparHtml(texto) {
+  return String(texto).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
+  );
+}
+
+/**
+ * Monta e manda o e-mail com o link.
+ *
+ * O texto simples vai junto do HTML de propósito: cliente de e-mail que não
+ * mostra HTML, e leitor de tela, ficam com uma versão legível em vez de nada.
+ */
+async function enviarLinkDeRedefinicao(usuario, token) {
+  const link = montarLink(token);
+  const minutos = Math.round(VALIDADE_DO_LINK / 60000);
+
+  const texto = [
+    `Oi, ${usuario.nome}.`,
+    '',
+    'Alguém pediu para trocar a senha do seu acesso ao Espremedor de Laranja.',
+    'Abra o endereço abaixo para escolher uma nova:',
+    '',
+    link,
+    '',
+    `O link vale por ${minutos} minutos e só funciona uma vez.`,
+    'Se não foi você que pediu, ignore este e-mail — sua senha continua a mesma.'
+  ].join('\n');
+
+  const html = `<div style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:15px;line-height:1.55;color:#1d1f22;max-width:520px">
+  <p>Oi, ${escaparHtml(usuario.nome)}.</p>
+  <p>Alguém pediu para trocar a senha do seu acesso ao <strong>Espremedor de Laranja</strong>.</p>
+  <p style="margin:26px 0">
+    <a href="${escaparHtml(link)}" style="background:#a8410a;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;display:inline-block;font-weight:600">Escolher uma nova senha</a>
+  </p>
+  <p style="color:#6b7076;font-size:13px">Se o botão não abrir, copie e cole este endereço:<br>
+    <span style="word-break:break-all">${escaparHtml(link)}</span></p>
+  <p style="color:#6b7076;font-size:13px">O link vale por ${minutos} minutos e só funciona uma vez.<br>
+    Se não foi você que pediu, ignore este e-mail — sua senha continua a mesma.</p>
+</div>`;
+
+  await email.enviar({
+    para: usuario.email,
+    nomeDoDestinatario: usuario.nome,
+    assunto: 'Trocar sua senha do Espremedor de Laranja',
+    texto,
+    html
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -576,17 +663,31 @@ async function tratarApi(requisicao, resposta, url) {
     const corpo = await lerCorpo(requisicao);
     const nome = String(corpo.nome || '').trim();
     const senha = String(corpo.senha || '');
+    const endereco = email.normalizarEmail(corpo.email);
     if (nome.length < 2) return erro(resposta, 400, 'Escreva seu nome com pelo menos 2 letras.');
     if (senha.length < 4) return erro(resposta, 400, 'A senha precisa de pelo menos 4 caracteres.');
+    if (!endereco) return erro(resposta, 400, 'Informe seu e-mail — é por ele que você recupera a senha.');
+    if (!email.pareceEmail(endereco)) return erro(resposta, 400, 'Esse e-mail não parece certo. Confira o que você digitou.');
 
     const primeiro = (await banco.contarUsuarios()) === 0;
-    const novo = await banco.criarUsuario({
-      id: novoId(),
-      nome,
-      chave: chaveLogin(nome),
-      senha: embaralharSenha(senha),
-      papel: primeiro ? 'espremedor' : 'usuario'
-    });
+    let novo;
+    try {
+      novo = await banco.criarUsuario({
+        id: novoId(),
+        nome,
+        chave: chaveLogin(nome),
+        senha: embaralharSenha(senha),
+        papel: primeiro ? 'espremedor' : 'usuario',
+        email: endereco
+      });
+    } catch (falha) {
+      // Nome repetido e e-mail repetido são conflitos diferentes, e a pessoa
+      // precisa saber qual dos dois barrou.
+      if (falha.code === '23505') {
+        return erro(resposta, 409, 'Esse e-mail já está em uso por outro acesso.');
+      }
+      throw falha;
+    }
     if (!novo) return erro(resposta, 409, 'Esse nome já está cadastrado. Entre com ele ou use outro.');
 
     const token = await abrirSessao(novo.id);
@@ -630,6 +731,7 @@ async function tratarApi(requisicao, resposta, url) {
     return responderJson(resposta, 200, {
       token,
       usuario: { id: encontrado.id, nome: encontrado.nome, papel: encontrado.papel },
+      email: encontrado.email,
       // A tela usa isto para oferecer a criação de um código a quem ainda não tem.
       temRecuperacao: Boolean(encontrado.recuperacao)
     });
@@ -641,9 +743,117 @@ async function tratarApi(requisicao, resposta, url) {
    * A quem pedir socorro quando o código também se perdeu.
    *
    * Sem login: quem esqueceu a senha é justamente quem não consegue entrar.
+   * Vai junto se este servidor sabe mandar e-mail, para a tela oferecer o
+   * caminho do link só quando ele realmente funciona.
    */
   if (rota === '/api/espremedores' && metodo === 'GET') {
-    return responderJson(resposta, 200, { espremedores: await banco.listarEspremedores() });
+    return responderJson(resposta, 200, {
+      espremedores: await banco.listarEspremedores(),
+      emailDisponivel: email.configurado()
+    });
+  }
+
+  /**
+   * Pedir o link de redefinição por e-mail.
+   *
+   * Aceita nome ou e-mail no mesmo campo — quem esqueceu a senha às vezes também
+   * não lembra com qual endereço se cadastrou.
+   *
+   * **A resposta é sempre a mesma, exista a conta ou não.** É o oposto do que a
+   * rota de entrar faz, e de propósito: lá o nome já era descobrível criando um
+   * acesso, aqui o que vazaria é "este e-mail pertence a alguém daqui", que não
+   * dá para descobrir de outro jeito e é dado de gente de fora do sistema.
+   */
+  if (rota === '/api/esqueci-senha' && metodo === 'POST') {
+    const corpo = await lerCorpo(requisicao);
+    const procurado = String(corpo.quem || '').trim();
+    const respostaGenerica = {
+      ok: true,
+      mensagem: 'Se houver um acesso com esse nome ou e-mail, o link acabou de ser enviado. Confira também a caixa de spam.'
+    };
+
+    if (!procurado) return erro(resposta, 400, 'Escreva seu nome ou seu e-mail.');
+    if (!email.configurado()) {
+      return responderJson(resposta, 503, {
+        erro: 'Este servidor ainda não está configurado para mandar e-mail. Use o código de recuperação ou peça a um espremedor.',
+        semEmail: true
+      });
+    }
+
+    // A trava vale aqui também: sem ela dá para varrer endereços vendo o tempo
+    // de resposta, e para usar o sistema como máquina de mandar e-mail.
+    const chave = `esqueci:${procurado.toLowerCase()}`;
+    if (travouPorTentativas(resposta, chave)) return;
+    anotarFalha(chave);
+
+    const encontrado = procurado.includes('@')
+      ? await banco.usuarioPorEmail(procurado)
+      : await banco.usuarioPorChave(chaveLogin(procurado));
+
+    if (encontrado && encontrado.email) {
+      const token = crypto.randomBytes(32).toString('hex');
+      await banco.criarRedefinicao(resumoDoToken(token), encontrado.id);
+      try {
+        await enviarLinkDeRedefinicao(encontrado, token);
+      } catch (falha) {
+        // Falha de envio é problema do servidor, não da pessoa: aqui vale contar,
+        // senão ela fica esperando para sempre um e-mail que não vai chegar.
+        console.error('[email] não deu para enviar:', falha.message);
+        return erro(resposta, 502, `Não deu para enviar o e-mail agora: ${falha.message}`);
+      }
+    }
+
+    return responderJson(resposta, 200, respostaGenerica);
+  }
+
+  /**
+   * Conferir o link antes de pedir a senha nova.
+   *
+   * Sem isto, quem abre um link vencido só descobriria depois de escolher a
+   * senha e apertar o botão. Não gasta o link — só olha.
+   */
+  if (rota === '/api/redefinir/conferir' && metodo === 'GET') {
+    const token = url.searchParams.get('token') || '';
+    const pedido = token ? await banco.redefinicaoValida(resumoDoToken(token), VALIDADE_DO_LINK) : null;
+    if (!pedido) {
+      return responderJson(resposta, 404, {
+        erro: 'Este link não vale mais. Peça outro na tela de entrada.',
+        expirado: true
+      });
+    }
+    return responderJson(resposta, 200, { nome: pedido.nome });
+  }
+
+  /** Trocar a senha pelo link do e-mail e já entrar. */
+  if (rota === '/api/redefinir' && metodo === 'POST') {
+    const corpo = await lerCorpo(requisicao);
+    const token = String(corpo.token || '');
+    const novaSenha = String(corpo.novaSenha || '');
+    if (novaSenha.length < 4) return erro(resposta, 400, 'A nova senha precisa de pelo menos 4 caracteres.');
+
+    const resumo = resumoDoToken(token);
+    const pedido = token ? await banco.redefinicaoValida(resumo, VALIDADE_DO_LINK) : null;
+    if (!pedido) {
+      return responderJson(resposta, 404, {
+        erro: 'Este link não vale mais. Peça outro na tela de entrada.',
+        expirado: true
+      });
+    }
+
+    // Gasta o link antes de trocar a senha: se duas abas mandarem juntas, só uma
+    // marca, e a outra para aqui em vez de trocar a senha duas vezes.
+    if (!(await banco.gastarRedefinicao(resumo))) {
+      return responderJson(resposta, 404, { erro: 'Este link já foi usado.', expirado: true });
+    }
+
+    await banco.trocarSenha(pedido.usuarioId, embaralharSenha(novaSenha));
+    await banco.fecharSessoesDoUsuario(pedido.usuarioId);
+    limparFalhas(chaveLogin(pedido.nome));
+
+    return responderJson(resposta, 200, {
+      token: await abrirSessao(pedido.usuarioId),
+      usuario: { id: pedido.usuarioId, nome: pedido.nome, papel: pedido.papel }
+    });
   }
 
   /**
@@ -706,6 +916,7 @@ async function tratarApi(requisicao, resposta, url) {
             id: usuario.id,
             nome: usuario.nome,
             papel: usuario.papel,
+            email: usuario.email,
             // Só o "tem ou não tem": o código nunca volta do banco em texto.
             temRecuperacao: Boolean(usuario.recuperacao)
           }
@@ -1136,6 +1347,31 @@ async function tratarApi(requisicao, resposta, url) {
     });
   }
 
+  /**
+   * Cadastrar ou trocar o próprio e-mail.
+   *
+   * Existe porque quem já tinha acesso antes desta versão está sem e-mail
+   * nenhum, e sem ele o link de redefinição não tem para onde ir. Pede a senha
+   * atual: trocar o e-mail é trocar o dono do "esqueci minha senha", então um
+   * aparelho deixado aberto não pode bastar.
+   */
+  if (rota === '/api/meu-email' && metodo === 'POST') {
+    if (!exigeLogin()) return;
+    const corpo = await lerCorpo(requisicao);
+    if (!senhaConfere(String(corpo.senha || ''), usuario.senha)) {
+      return erro(resposta, 401, 'A senha não confere.');
+    }
+
+    const endereco = email.normalizarEmail(corpo.email);
+    if (endereco && !email.pareceEmail(endereco)) {
+      return erro(resposta, 400, 'Esse e-mail não parece certo. Confira o que você digitou.');
+    }
+
+    const atualizado = await banco.gravarEmail(usuario.id, endereco || null);
+    if (!atualizado) return erro(resposta, 409, 'Esse e-mail já está em uso por outro acesso.');
+    return responderJson(resposta, 200, { email: atualizado.email });
+  }
+
   return erro(resposta, 404, 'Rota não encontrada.');
 }
 
@@ -1172,6 +1408,7 @@ const servidor = http.createServer((requisicao, resposta) => {
   }
 
   banco.limparSessoesVencidas(DURACAO_SESSAO).catch(() => {});
+  banco.limparRedefinicoesVencidas(VALIDADE_DO_LINK).catch(() => {});
 
   servidor.listen(PORTA, '0.0.0.0', () => {
     const enderecos = ['localhost'];

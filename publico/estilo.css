@@ -1093,3 +1093,33 @@ tr:last-child td { border-bottom: 0; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ---------- recuperação por e-mail ---------- */
+
+.recado-bom {
+  background: #e8f6ef;
+  color: #04613c;
+  border: 1px solid #bfe4d3;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+/* O "ou" entre os dois caminhos de recuperação, com um fio de cada lado. */
+.separador {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 4px;
+  color: var(--tinta-fraca);
+  font-size: 12px;
+}
+
+.separador::before,
+.separador::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--linha);
+}

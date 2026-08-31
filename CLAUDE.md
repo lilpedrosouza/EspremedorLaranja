@@ -66,6 +66,10 @@ só os dias de mudança diriam qual dia o site mexe no preço, não qual dia é 
 função devolve um estado de "ainda não sei" — `situacao: 'sem-dados'`, `suficiente: false`
 — em vez de concluir com pouca amostra.
 
+**`lib/email.js`** — envio pela API do Brevo, HTTP puro com `fetch`, sem dependência
+nova. Só monta a requisição e traduz a falha para português; o texto do e-mail mora em
+`servidor.js`. `configurado()` deixa todo o resto do sistema funcionar sem e-mail.
+
 **`lib/pix.js`** — monta o BR Code (EMV®QRCPS) com CRC16/CCITT-FALSE. Sem dependência
 externa; o QR em SVG sai do `qrcode` em `servidor.js`.
 
@@ -80,8 +84,15 @@ carrega os dados da aba. As abas são `loja`, `rastreio`, `fechamento`, `catalog
   vira espremedor automaticamente; depois só um espremedor promove alguém, e o sistema não
   deixa ficar sem nenhum. Os nomes antigos eram `comprador` e `colega` — o `schema.sql` tem
   dois `update` que renomeiam e não fazem nada a partir da segunda vez.
-- **Código de recuperação**: é o "esqueci minha senha" daqui, porque ninguém cadastra
-  e-mail e não há como mandar link. Dezesseis caracteres de um alfabeto sem `0/O/1/I/L`,
+- **Recuperação de senha por e-mail**: caminho principal. `/api/esqueci-senha` grava
+  em `redefinicoes` o **SHA-256** do token (nunca o token), manda o link por
+  `lib/email.js` e **responde igual exista a conta ou não** — o oposto de `/api/entrar`,
+  que diz quando o nome não existe. A assimetria é deliberada: nome já era descobrível
+  pelo cadastro aberto, "este e-mail é de alguém daqui" não. O link vale 1 hora
+  (`VALIDADE_DO_LINK`), é de uso único, e pedir outro marca os anteriores como usados.
+  Sem `BREVO_API_KEY`/`EMAIL_REMETENTE` o módulo não quebra: `email.configurado()` dá
+  false, a rota responde 503 com `semEmail` e a tela cai no código.
+- **Código de recuperação**: o caminho reserva, para quem não tem e-mail cadastrado. Dezesseis caracteres de um alfabeto sem `0/O/1/I/L`,
   guardados com scrypt igual à senha — o código em texto só existe no instante em que é
   gerado e devolvido pela rota. É de uso único: ao gastar, `/api/recuperar` já emite outro.
   Quem perdeu o código cai no caminho manual, e `/api/espremedores` (sem login) diz a quem

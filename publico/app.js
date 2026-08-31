@@ -168,6 +168,9 @@ async function baixarCsv(rodadaId) {
 
 let modoEntrada = 'entrar';
 
+// O token que veio no link do e-mail (?redefinir=...), quando houver.
+let tokenDoLink = null;
+
 function ajustarEntrada() {
   const criando = modoEntrada === 'criar';
   $('#aba-entrar').setAttribute('aria-pressed', String(!criando));
@@ -176,8 +179,11 @@ function ajustarEntrada() {
   // O navegador usa isto para decidir entre preencher a senha guardada e
   // oferecer a criação de uma nova.
   $('#campo-senha').setAttribute('autocomplete', criando ? 'new-password' : 'current-password');
+  // O e-mail só aparece ao criar acesso: na entrada ele não serve para nada e
+  // um campo a mais só atrapalha quem já tem conta.
+  $('#campo-email-caixa').classList.toggle('escondido', !criando);
   $('#dica-entrada').textContent = criando
-    ? 'Use seu primeiro nome. A senha serve só pra ninguém pedir no seu lugar.'
+    ? 'O e-mail é por onde você recupera a senha se esquecer.'
     : 'Ainda não tem acesso? Toque em “Criar acesso”.';
   $('#erro-entrada').classList.add('escondido');
 }
@@ -208,23 +214,115 @@ function mostrarErroRecuperacao(mensagem) {
   caixa.classList.remove('escondido');
 }
 
-/** Alterna entre o painel de entrar/criar e o de recuperar a senha. */
+/** Alterna entre os três painéis da tela de entrada. */
 function mostrarPainelEntrada(qual) {
   $('#painel-acesso').classList.toggle('escondido', qual !== 'acesso');
   $('#painel-recuperacao').classList.toggle('escondido', qual !== 'recuperacao');
-  $('#erro-entrada').classList.add('escondido');
-  $('#erro-recuperacao').classList.add('escondido');
+  $('#painel-nova-senha').classList.toggle('escondido', qual !== 'nova-senha');
+  for (const caixa of ['#erro-entrada', '#erro-recuperacao', '#aviso-recuperacao', '#erro-nova-senha']) {
+    $(caixa).classList.add('escondido');
+  }
 
   if (qual === 'recuperacao') {
     // Leva junto o nome que a pessoa já tinha digitado: ela chegou aqui depois
     // de tentar entrar, e redigitar o mesmo nome é atrito à toa.
-    if ($('#campo-nome').value.trim() && !$('#rec-nome').value.trim()) {
-      $('#rec-nome').value = $('#campo-nome').value.trim();
-    }
+    const digitado = $('#campo-nome').value.trim();
+    if (digitado && !$('#esq-quem').value.trim()) $('#esq-quem').value = digitado;
+    if (digitado && !$('#rec-nome').value.trim()) $('#rec-nome').value = digitado;
     mostrarQuemAjuda();
-    $('#rec-nome').focus();
-  } else {
+    $('#esq-quem').focus();
+  } else if (qual === 'acesso') {
     $('#campo-nome').focus();
+  }
+}
+
+/** Pede o link de redefinição por e-mail. */
+async function enviarEsqueci(evento) {
+  if (evento) evento.preventDefault();
+  const quem = $('#esq-quem').value.trim();
+  if (!quem) return mostrarErroRecuperacao('Escreva seu nome ou seu e-mail.');
+
+  const botao = $('#botao-esqueci');
+  botao.disabled = true;
+  botao.textContent = 'Enviando…';
+  $('#erro-recuperacao').classList.add('escondido');
+  try {
+    const dados = await api('/api/esqueci-senha', { method: 'POST', corpo: { quem } });
+    const aviso = $('#aviso-recuperacao');
+    aviso.textContent = dados.mensagem;
+    aviso.classList.remove('escondido');
+    $('#forma-esqueci').classList.add('escondido');
+  } catch (falha) {
+    mostrarErroRecuperacao(falha.message);
+    // Servidor sem e-mail configurado: o caminho do código é o que resta.
+    if (falha.dados && falha.dados.semEmail) mostrarFormularioDoCodigo();
+  } finally {
+    botao.disabled = false;
+    botao.textContent = 'Enviar link por e-mail';
+  }
+}
+
+function mostrarFormularioDoCodigo() {
+  $('#forma-recuperacao').classList.remove('escondido');
+  $('#abrir-codigo').classList.add('escondido');
+  $('#separador-recuperacao').classList.add('escondido');
+  $('#rec-codigo').focus();
+}
+
+/**
+ * A tela que o link do e-mail abre.
+ *
+ * Confere o link antes de mostrar o campo: descobrir que o link venceu só
+ * depois de escolher a senha e apertar o botão seria cruel.
+ */
+async function abrirNovaSenha(token) {
+  $('#tela-app').classList.add('escondido');
+  $('#tela-entrada').classList.remove('escondido');
+  mostrarPainelEntrada('nova-senha');
+
+  try {
+    const dados = await api(`/api/redefinir/conferir?token=${encodeURIComponent(token)}`);
+    $('#abertura-nova-senha').textContent = `Oi, ${dados.nome}. Escolha a senha que você vai usar de agora em diante.`;
+    $('#forma-nova-senha').classList.remove('escondido');
+    $('#nova-senha-link').focus();
+  } catch (falha) {
+    $('#abertura-nova-senha').textContent = '';
+    $('#forma-nova-senha').classList.add('escondido');
+    const caixa = $('#erro-nova-senha');
+    caixa.textContent = falha.message;
+    caixa.classList.remove('escondido');
+  }
+}
+
+async function enviarNovaSenha(evento) {
+  if (evento) evento.preventDefault();
+  const novaSenha = $('#nova-senha-link').value;
+  if (!novaSenha) return;
+
+  const botao = $('#botao-nova-senha');
+  botao.disabled = true;
+  botao.textContent = 'Salvando…';
+  try {
+    const conta = await api('/api/redefinir', {
+      method: 'POST',
+      corpo: { token: tokenDoLink, novaSenha }
+    });
+    guardarToken(conta.token);
+    $('#nova-senha-link').value = '';
+    // Tira o token da barra de endereços: ele já foi gasto, e recarregar a
+    // página com ele na URL só mostraria "este link não vale mais".
+    tokenDoLink = null;
+    history.replaceState(null, '', location.pathname);
+    await iniciar();
+    torradeira('Senha trocada. Bom te ver de volta.');
+  } catch (falha) {
+    const caixa = $('#erro-nova-senha');
+    caixa.textContent = falha.message;
+    caixa.classList.remove('escondido');
+    if (falha.dados && falha.dados.expirado) $('#forma-nova-senha').classList.add('escondido');
+  } finally {
+    botao.disabled = false;
+    botao.textContent = 'Salvar e entrar';
   }
 }
 
@@ -233,13 +331,23 @@ function nomesEmLista(nomes) {
   return `${nomes.slice(0, -1).join(', ')} ou ${nomes[nomes.length - 1]}`;
 }
 
-/** Quem procurar quando o código de recuperação também se perdeu. */
+/** Quem procurar quando nem o e-mail nem o código resolvem. */
 async function mostrarQuemAjuda() {
   try {
-    const { espremedores } = await api('/api/espremedores');
-    if (!espremedores.length) return;
-    $('#dica-recuperacao').textContent =
-      `Perdeu o código? Peça a ${nomesEmLista(espremedores)} para redefinir sua senha.`;
+    const dados = await api('/api/espremedores');
+
+    // Servidor sem e-mail configurado: não adianta oferecer o link.
+    if (!dados.emailDisponivel) {
+      $('#abertura-recuperacao').textContent =
+        'Use o código de recuperação que você anotou quando criou o acesso.';
+      $('#forma-esqueci').classList.add('escondido');
+      mostrarFormularioDoCodigo();
+    }
+
+    if (dados.espremedores.length) {
+      $('#dica-recuperacao').textContent =
+        `Sem e-mail e sem código? Peça a ${nomesEmLista(dados.espremedores)} para redefinir sua senha.`;
+    }
   } catch {
     // A dica genérica já está escrita na tela; sem rede ela continua servindo.
   }
@@ -264,13 +372,16 @@ async function enviarEntrada(evento) {
   if (!nome || !senha) return mostrarErroEntrada('Preencha nome e senha.');
 
   const criando = modoEntrada === 'criar';
+  const enderecoEmail = $('#campo-email').value.trim();
+  if (criando && !enderecoEmail) return mostrarErroEntrada('Informe seu e-mail — é por ele que você recupera a senha.');
+
   const botao = $('#botao-entrada');
   botao.disabled = true;
   botao.textContent = criando ? 'Criando…' : 'Entrando…';
   try {
     const conta = await api(criando ? '/api/cadastro' : '/api/entrar', {
       method: 'POST',
-      corpo: { nome, senha }
+      corpo: criando ? { nome, senha, email: enderecoEmail } : { nome, senha }
     });
     guardarToken(conta.token);
     $('#campo-senha').value = '';
@@ -1455,6 +1566,7 @@ async function carregarPessoas() {
   $('#subtitulo-conta').textContent = espremedor
     ? 'Quem tem acesso e quem faz a compra.'
     : 'Troque sua senha ou gere seu código de recuperação.';
+  desenharEstadoEmail();
   desenharEstadoRecuperacao();
   if (!espremedor) return;
 
@@ -1505,6 +1617,34 @@ async function trocarMinhaSenha() {
     torradeira('Senha trocada. Os outros aparelhos foram desconectados.');
   } catch (falha) {
     torradeira(falha.message, true);
+  }
+}
+
+function desenharEstadoEmail() {
+  const atual = estado.usuario && estado.usuario.email;
+  $('#estado-email').textContent = atual
+    ? 'É para cá que vai o link quando você esquecer a senha.'
+    : 'Você ainda não tem e-mail cadastrado — sem ele o link de "esqueci minha senha" não tem para onde ir.';
+  $('#meu-email').value = atual || '';
+}
+
+async function salvarMeuEmail() {
+  const endereco = $('#meu-email').value.trim();
+  const senha = $('#senha-para-email').value;
+  if (!senha) return torradeira('Confirme sua senha para trocar o e-mail.', true);
+
+  const botao = $('#botao-salvar-email');
+  botao.disabled = true;
+  try {
+    const dados = await api('/api/meu-email', { method: 'POST', corpo: { senha, email: endereco } });
+    estado.usuario.email = dados.email;
+    $('#senha-para-email').value = '';
+    desenharEstadoEmail();
+    torradeira(dados.email ? 'E-mail salvo.' : 'E-mail removido.');
+  } catch (falha) {
+    torradeira(falha.message, true);
+  } finally {
+    botao.disabled = false;
   }
 }
 
@@ -1584,6 +1724,15 @@ async function carregarSessao() {
 }
 
 async function iniciar() {
+  // O link do e-mail manda para cá com o token na barra de endereços. Ele passa
+  // na frente de tudo: quem clicou quer trocar a senha, mesmo que ainda haja
+  // uma sessão velha aberta neste navegador.
+  const daUrl = new URLSearchParams(location.search).get('redefinir');
+  if (daUrl) {
+    tokenDoLink = daUrl;
+    return abrirNovaSenha(daUrl);
+  }
+
   const sessao = await carregarSessao();
 
   if (!sessao.usuario) {
@@ -1638,8 +1787,21 @@ $('#aba-criar').addEventListener('click', () => {
 $('#forma-entrada').addEventListener('submit', enviarEntrada);
 $('#forma-recuperacao').addEventListener('submit', enviarRecuperacao);
 
+$('#forma-esqueci').addEventListener('submit', enviarEsqueci);
+$('#forma-nova-senha').addEventListener('submit', enviarNovaSenha);
+
 $('#abrir-recuperacao').addEventListener('click', () => mostrarPainelEntrada('recuperacao'));
+$('#abrir-codigo').addEventListener('click', mostrarFormularioDoCodigo);
 $('#voltar-entrada').addEventListener('click', () => mostrarPainelEntrada('acesso'));
+
+$('#voltar-da-nova-senha').addEventListener('click', () => {
+  // Sai do link e volta à entrada normal, sem o token pendurado na URL.
+  tokenDoLink = null;
+  history.replaceState(null, '', location.pathname);
+  iniciar();
+});
+
+$('#botao-salvar-email').addEventListener('click', salvarMeuEmail);
 
 /** O olho que mostra a senha. Ajuda em teclado de celular, onde errar é fácil. */
 for (const botao of $$('.olho')) {
