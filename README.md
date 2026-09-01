@@ -224,6 +224,13 @@ não, e é dado de gente que talvez nem use o sistema.
 **Quem já tinha conta não tem e-mail cadastrado.** É só ir em *Minha conta* →
 **Meu e-mail**, preencher e confirmar a senha.
 
+Quem não deu conta sozinho — ou digitou o endereço errado no cadastro e agora o
+link cai no vazio — tem quem arrume: qualquer espremedor abre *Minha conta* →
+**Quem tem acesso** e escreve na coluna **E-mail** ao lado do nome da pessoa. Sai
+do campo e está salvo; apagar o que está escrito tira o e-mail. Trocar o endereço
+**derruba na hora** qualquer link de redefinição que já tenha sido enviado para o
+antigo, que senão continuaria valendo na caixa de entrada de outra pessoa.
+
 #### Ligar o envio (uma vez só)
 
 Sem isto configurado, o botão de e-mail nem aparece e a tela oferece direto o
@@ -269,8 +276,9 @@ código, esquecer a senha vira problema de outra pessoa resolver.
 ### Perdi o e-mail e o código
 
 Aí é no braço: qualquer espremedor abre *Minha conta* → **Quem tem acesso** e
-clica em **Redefinir senha** ao lado do seu nome. A própria tela de recuperação
-mostra a quem pedir.
+clica em **Redefinir senha** ao lado do seu nome. Na mesma linha ele também
+conserta seu **e-mail**, para o link voltar a funcionar da próxima vez. A própria
+tela de recuperação mostra a quem pedir.
 
 Trocar de senha por qualquer um desses caminhos **desconecta os outros
 aparelhos** — quem estava logado no seu nome em outro lugar cai fora. Quem trocou

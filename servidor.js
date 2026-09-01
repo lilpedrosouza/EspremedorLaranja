@@ -1283,7 +1283,13 @@ async function tratarApi(requisicao, resposta, url) {
     if (!exigeEspremedor()) return;
     const usuarios = await banco.listarUsuarios();
     return responderJson(resposta, 200, {
-      usuarios: usuarios.map((u) => ({ id: u.id, nome: u.nome, papel: u.papel, criadoEm: u.criadoEm }))
+      usuarios: usuarios.map((u) => ({
+        id: u.id,
+        nome: u.nome,
+        papel: u.papel,
+        email: u.email,
+        criadoEm: u.criadoEm
+      }))
     });
   }
 
@@ -1307,6 +1313,21 @@ async function tratarApi(requisicao, resposta, url) {
       }
       atualizado = await banco.trocarPapel(alvo.id, corpo.papel);
     }
+    // Diferente de `/api/meu-email`, aqui não se pede a senha de ninguém: o
+    // espremedor já pode redefinir a senha da pessoa logo abaixo, então exigir
+    // confirmação para o e-mail não protegeria nada. Vazio apaga o endereço.
+    if (corpo.email !== undefined) {
+      const endereco = email.normalizarEmail(corpo.email);
+      if (endereco && !email.pareceEmail(endereco)) {
+        return erro(resposta, 400, 'Esse e-mail não parece certo. Confira o que você digitou.');
+      }
+      const comEmail = await banco.gravarEmail(alvo.id, endereco || null);
+      if (!comEmail) return erro(resposta, 409, 'Esse e-mail já está em uso por outro acesso.');
+      // O link de "esqueci minha senha" que estava valendo foi para o endereço
+      // antigo. Trocar o e-mail tem que derrubá-lo.
+      await banco.invalidarRedefinicoes(alvo.id);
+      atualizado = comEmail;
+    }
     if (corpo.novaSenha) {
       if (String(corpo.novaSenha).length < 4) return erro(resposta, 400, 'A senha precisa de pelo menos 4 caracteres.');
       atualizado = await banco.trocarSenha(alvo.id, embaralharSenha(String(corpo.novaSenha)));
@@ -1315,7 +1336,7 @@ async function tratarApi(requisicao, resposta, url) {
       await banco.fecharSessoesDoUsuario(alvo.id);
     }
     return responderJson(resposta, 200, {
-      usuario: { id: atualizado.id, nome: atualizado.nome, papel: atualizado.papel }
+      usuario: { id: atualizado.id, nome: atualizado.nome, papel: atualizado.papel, email: atualizado.email }
     });
   }
 
@@ -1375,6 +1396,7 @@ async function tratarApi(requisicao, resposta, url) {
 
     const atualizado = await banco.gravarEmail(usuario.id, endereco || null);
     if (!atualizado) return erro(resposta, 409, 'Esse e-mail já está em uso por outro acesso.');
+    await banco.invalidarRedefinicoes(usuario.id);
     return responderJson(resposta, 200, { email: atualizado.email });
   }
 

@@ -94,7 +94,11 @@ carrega os dados da aba. As abas são `loja`, `rastreio`, `fechamento`, `catalog
   pelo cadastro aberto, "este e-mail é de alguém daqui" não. O link vale 1 hora
   (`VALIDADE_DO_LINK`), é de uso único, e pedir outro marca os anteriores como usados.
   Sem `BREVO_API_KEY`/`EMAIL_REMETENTE` o módulo não quebra: `email.configurado()` dá
-  false, a rota responde 503 com `semEmail` e a tela cai no código.
+  false, a rota responde 503 com `semEmail` e a tela cai no código. O e-mail se troca
+  por dois caminhos: `/api/meu-email` (o próprio, pedindo a senha) e o `PATCH`
+  `/api/usuarios/:id` (o espremedor arrumando o de outra pessoa, sem pedir senha —
+  ele já podia redefinir a senha por ali). Os dois chamam `invalidarRedefinicoes()`:
+  link que já saiu foi para o endereço antigo e não pode continuar valendo.
 - **Código de recuperação**: o caminho reserva, para quem não tem e-mail cadastrado. Dezesseis caracteres de um alfabeto sem `0/O/1/I/L`,
   guardados com scrypt igual à senha — o código em texto só existe no instante em que é
   gerado e devolvido pela rota. É de uso único: ao gastar, `/api/recuperar` já emite outro.

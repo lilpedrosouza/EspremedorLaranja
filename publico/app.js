@@ -1574,7 +1574,7 @@ async function carregarPessoas() {
     const dados = await api('/api/usuarios');
     $('#tabela-pessoas').innerHTML = `
       <table>
-        <thead><tr><th>Nome</th><th>Perfil</th><th>Desde</th><th></th></tr></thead>
+        <thead><tr><th>Nome</th><th>Perfil</th><th>E-mail</th><th>Desde</th><th></th></tr></thead>
         <tbody>
           ${dados.usuarios
             .map(
@@ -1586,6 +1586,12 @@ async function carregarPessoas() {
                   <option value="usuario" ${pessoa.papel === 'usuario' ? 'selected' : ''}>usuário</option>
                   <option value="espremedor" ${pessoa.papel === 'espremedor' ? 'selected' : ''}>espremedor</option>
                 </select>
+              </td>
+              <td>
+                <input type="email" data-acao="email" autocomplete="off" spellcheck="false"
+                       value="${esc(pessoa.email || '')}" data-valor="${esc(pessoa.email || '')}"
+                       placeholder="sem e-mail"
+                       style="width:100%;min-width:170px;padding:5px 8px;border:1px solid var(--linha);border-radius:6px;background:var(--papel)">
               </td>
               <td>${quandoFoi(pessoa.criadoEm)}</td>
               <td class="num">
@@ -2068,7 +2074,35 @@ $('#tabela-catalogo').addEventListener('click', async (evento) => {
 
 $('#tabela-pessoas').addEventListener('change', async (evento) => {
   const linha = evento.target.closest('tr[data-id]');
-  if (!linha || evento.target.dataset.acao !== 'papel') return;
+  const acao = evento.target.dataset.acao;
+  if (!linha || (acao !== 'papel' && acao !== 'email')) return;
+
+  // O e-mail é o destino do link de "esqueci minha senha" — por isso o
+  // espremedor consegue arrumar o de quem digitou torto ou trocou de endereço.
+  if (acao === 'email') {
+    const campo = evento.target;
+    const endereco = campo.value.trim();
+    // O evento também dispara ao sair do campo sem ter mexido em nada.
+    if (endereco === (campo.dataset.valor || '')) return;
+    try {
+      const dados = await api(`/api/usuarios/${linha.dataset.id}`, {
+        method: 'PATCH',
+        corpo: { email: endereco }
+      });
+      campo.value = dados.usuario.email || '';
+      campo.dataset.valor = dados.usuario.email || '';
+      if (linha.dataset.id === estado.usuario.id) {
+        estado.usuario.email = dados.usuario.email;
+        desenharEstadoEmail();
+      }
+      torradeira(dados.usuario.email ? 'E-mail atualizado.' : 'E-mail removido.');
+    } catch (falha) {
+      torradeira(falha.message, true);
+      campo.value = campo.dataset.valor || '';
+    }
+    return;
+  }
+
   try {
     await api(`/api/usuarios/${linha.dataset.id}`, { method: 'PATCH', corpo: { papel: evento.target.value } });
     torradeira('Perfil atualizado.');
