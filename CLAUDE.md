@@ -51,11 +51,15 @@ Não existe ferramenta de migração. Com a tabela `produtos` vazia, o boot grav
 
 **`lib/catalogo-nescafe.js`** — leitura do catálogo da Nescafé, com cascata de fallbacks:
 GraphQL da loja → HTML de `/sabores` (três parsers, o de mais resultados vence) → `curl`
-do sistema quando o `fetch` do Node leva 403 por impressão digital do TLS. Três travas
+do sistema quando o `fetch` do Node leva 403 por impressão digital do TLS. Quatro travas
 protegem o catálogo de uma leitura ruim: `pareceBloqueio()` recusa a página de desafio do
-CDN, `RESIDUO_DE_MARCACAO` descarta nome com sobra de HTML, e `leituraParcial` (menos de
-60% do conhecido reconhecido) impede marcar produto como *saiu do site*. Nada é apagado —
-o que sumiu vira `foraDoSite`.
+CDN, `RESIDUO_DE_MARCACAO` descarta nome com sobra de HTML, `leituraParcial` (menos de
+60% do conhecido reconhecido) impede marcar produto como *saiu do site*, e `podeCriar`
+(nem parcial nem cega, isto é, ninguém com link ou foto) impede que uma leitura pobre
+**cadastre** produto novo — ela ainda atualiza preço de quem já existe. Nada é apagado —
+o que sumiu vira `foraDoSite`. E a **categoria só é corrigida pelo que o site declara**
+(`categoriaDeclarada`, marcada em `categoriaDoSite`): a adivinhação pelo nome serve para
+cadastrar, nunca para sobrescrever categoria já gravada.
 
 **`lib/precos.js`** — análise do histórico de preço. Só contas, sem SQL e sem HTTP,
 como `lib/pix.js`. Duas ideias sustentam o módulo: a média é **ponderada pelo tempo**

@@ -610,11 +610,18 @@ async function rodarSincronizacao(disparadaPor) {
       sumiram: resultado.sumiram,
       estrategia: resultado.estrategia,
       leituraParcial: Boolean(resultado.leituraParcial),
+      leituraCega: Boolean(resultado.leituraCega),
+      naoCriados: resultado.naoCriados,
       mensagem:
         `${resultado.encontrados} produtos lidos do site — ${resultado.novos} novos, ` +
         `${resultado.atualizados} atualizados.` +
         (resultado.leituraParcial
           ? ' A leitura veio incompleta, então nada foi marcado como "saiu do site".'
+          : '') +
+        (resultado.naoCriados
+          ? ` ${resultado.naoCriados} produto(s) do site ficaram de fora do cadastro: esta ` +
+            'leitura não trouxe foto, link nem descrição, e cadastrar assim deixaria a ' +
+            'categoria errada para sempre. Eles entram sozinhos na próxima leitura completa.'
           : '')
     };
     await banco.gravarSincronizacao(registro);
