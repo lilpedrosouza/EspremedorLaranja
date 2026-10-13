@@ -27,6 +27,7 @@ const simular = process.argv.includes('--simular');
 
     const resultado = await catalogo.sincronizar(atual);
     console.log(`Leitura pela estratégia "${resultado.estrategia}": ${resultado.encontrados} produtos.`);
+    for (const tropeco of resultado.tropecos) console.log(`Tropeço: ${tropeco}`);
     console.log(`Novos: ${resultado.novos} · Atualizados: ${resultado.atualizados} · Sumiram do site: ${resultado.sumiram}`);
     console.log(`Com imagem: ${resultado.catalogo.filter((p) => p.imagem).length} de ${resultado.catalogo.length}.`);
     if (resultado.leituraParcial) {
@@ -35,8 +36,9 @@ const simular = process.argv.includes('--simular');
 
     if (simular) {
       console.log('\nModo simulação: nada foi gravado.');
-      for (const item of resultado.catalogo.slice(0, 10)) {
-        console.log(` - ${item.nome} — ${item.preco} — ${item.categoria}`);
+      const jaExistiam = new Set(atual.map((item) => item.id));
+      for (const item of resultado.catalogo.filter((p) => !jaExistiam.has(p.id))) {
+        console.log(` + ${item.nome} — ${item.preco} — ${item.categoria}${item.ativo ? '' : ' (fora da tela de pedido)'}`);
       }
       return;
     }

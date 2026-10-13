@@ -612,6 +612,7 @@ async function rodarSincronizacao(disparadaPor) {
       leituraParcial: Boolean(resultado.leituraParcial),
       leituraCega: Boolean(resultado.leituraCega),
       naoCriados: resultado.naoCriados,
+      tropecos: resultado.tropecos,
       mensagem:
         `${resultado.encontrados} produtos lidos do site — ${resultado.novos} novos, ` +
         `${resultado.atualizados} atualizados.` +
@@ -622,8 +623,14 @@ async function rodarSincronizacao(disparadaPor) {
           ? ` ${resultado.naoCriados} produto(s) do site ficaram de fora do cadastro: esta ` +
             'leitura não trouxe foto, link nem descrição, e cadastrar assim deixaria a ' +
             'categoria errada para sempre. Eles entram sozinhos na próxima leitura completa.'
+          : '') +
+        (resultado.estrategia !== 'graphql' && resultado.tropecos.length
+          ? ` A API da loja não respondeu (${resultado.tropecos.join(' · ')}), por isso a leitura foi pela página.`
           : '')
     };
+    if (resultado.tropecos.length) {
+      console.warn(`  [catálogo] tropeços na leitura: ${resultado.tropecos.join(' · ')}`);
+    }
     await banco.gravarSincronizacao(registro);
     return registro;
   } catch (falha) {
