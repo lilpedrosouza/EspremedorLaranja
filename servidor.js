@@ -638,12 +638,16 @@ async function rodarSincronizacao(disparadaPor) {
     const mensagem = bloqueadoPeloSite
       ? 'A leitura automática não passou pela proteção contra robôs do site da Nescafé (não é um erro daqui). A leitura normal é feita pela API da loja; se ela também falhou, costuma ser passageiro — tente de novo mais tarde. Enquanto isso, ajuste preços, estoque e imagens direto na aba Catálogo: pedido, fechamento e planilha seguem funcionando.'
       : `Não deu para ler o site agora: ${falha.message}`;
+    // A mensagem de bloqueio é para quem usa a tela e esconde o porquê; o
+    // detalhe de cada tentativa (GET, POST, curl, página) fica guardado à parte.
+    console.warn(`  [catálogo] a leitura falhou: ${falha.message}`);
     const registro = {
       ...(await banco.lerSincronizacao()),
       ultimaTentativa: new Date().toISOString(),
       situacao: 'falhou',
       bloqueadoPeloSite,
       disparadaPor: disparadaPor || 'automática',
+      detalhe: falha.message,
       mensagem
     };
     await banco.gravarSincronizacao(registro).catch(() => {});
