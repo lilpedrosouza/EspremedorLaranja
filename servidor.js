@@ -783,10 +783,15 @@ async function tratarApi(requisicao, resposta, url) {
    * Aceita nome ou e-mail no mesmo campo — quem esqueceu a senha às vezes também
    * não lembra com qual endereço se cadastrou.
    *
-   * **A resposta é sempre a mesma, exista a conta ou não.** É o oposto do que a
-   * rota de entrar faz, e de propósito: lá o nome já era descobrível criando um
-   * acesso, aqui o que vazaria é "este e-mail pertence a alguém daqui", que não
-   * dá para descobrir de outro jeito e é dado de gente de fora do sistema.
+   * **Procurando por e-mail, a resposta é sempre a mesma, exista a conta ou
+   * não.** O que vazaria é "este e-mail pertence a alguém daqui", que não dá
+   * para descobrir de outro jeito e é dado de gente de fora do sistema.
+   *
+   * **Procurando por nome, a rota conta o que achou**, como a de entrar: o nome
+   * já era descobrível criando um acesso. E calar aqui custava caro — metade das
+   * contas não tinha e-mail, a tela dizia "o link foi enviado" e a pessoa ficava
+   * esperando um e-mail que nunca ia sair. A resposta não diz qual é o
+   * endereço, só se existe um.
    */
   if (rota === '/api/esqueci-senha' && metodo === 'POST') {
     const corpo = await lerCorpo(requisicao);
@@ -810,9 +815,22 @@ async function tratarApi(requisicao, resposta, url) {
     if (travouPorTentativas(resposta, chave)) return;
     anotarFalha(chave);
 
-    const encontrado = procurado.includes('@')
+    const porEmail = procurado.includes('@');
+    const encontrado = porEmail
       ? await banco.usuarioPorEmail(procurado)
       : await banco.usuarioPorChave(chaveLogin(procurado));
+
+    if (!porEmail && !encontrado) {
+      return erro(resposta, 404, 'Não achei esse nome. Confira como você escreveu, ou tente pelo seu e-mail.');
+    }
+    if (!porEmail && !encontrado.email) {
+      // `semEmail` leva a tela direto ao código de recuperação, o mesmo caminho
+      // de quando o servidor não manda e-mail.
+      return responderJson(resposta, 422, {
+        erro: 'Esse acesso não tem e-mail cadastrado, então não há para onde mandar o link. Use o código de recuperação ou peça a um espremedor.',
+        semEmail: true
+      });
+    }
 
     if (encontrado && encontrado.email) {
       const token = crypto.randomBytes(32).toString('hex');

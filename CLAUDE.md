@@ -93,9 +93,11 @@ carrega os dados da aba. As abas são `loja`, `rastreio`, `fechamento`, `catalog
   dois `update` que renomeiam e não fazem nada a partir da segunda vez.
 - **Recuperação de senha por e-mail**: caminho principal. `/api/esqueci-senha` grava
   em `redefinicoes` o **SHA-256** do token (nunca o token), manda o link por
-  `lib/email.js` e **responde igual exista a conta ou não** — o oposto de `/api/entrar`,
-  que diz quando o nome não existe. A assimetria é deliberada: nome já era descobrível
-  pelo cadastro aberto, "este e-mail é de alguém daqui" não. O link vale 1 hora
+  `lib/email.js`. **Procurando por e-mail, responde igual exista a conta ou não**;
+  procurando por nome, diz quando o nome não existe (404) e quando a conta não tem
+  e-mail (422 com `semEmail`), como `/api/entrar`. A assimetria é deliberada: nome já
+  era descobrível pelo cadastro aberto, "este e-mail é de alguém daqui" não. Calar no
+  caso do nome deixava metade das contas, as sem e-mail, esperando um link que nunca saía. O link vale 1 hora
   (`VALIDADE_DO_LINK`), é de uso único, e pedir outro marca os anteriores como usados.
   Sem `BREVO_API_KEY`/`EMAIL_REMETENTE` o módulo não quebra: `email.configurado()` dá
   false, a rota responde 503 com `semEmail` e a tela cai no código. O e-mail se troca

@@ -254,7 +254,8 @@ async function enviarEsqueci(evento) {
     $('#forma-esqueci').classList.add('escondido');
   } catch (falha) {
     mostrarErroRecuperacao(falha.message);
-    // Servidor sem e-mail configurado: o caminho do código é o que resta.
+    // Servidor sem e-mail configurado, ou conta sem e-mail cadastrado: o
+    // caminho do código é o que resta.
     if (falha.dados && falha.dados.semEmail) mostrarFormularioDoCodigo();
   } finally {
     botao.disabled = false;

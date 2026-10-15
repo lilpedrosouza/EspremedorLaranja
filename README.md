@@ -241,7 +241,12 @@ código de recuperação. Nada quebra.
 2. **Senders, Domains & Dedicated IPs → Senders → Add a sender**: ponha seu
    e-mail mesmo e clique no link de confirmação que chega nele.
 3. **SMTP & API → API Keys → Generate a new API key**.
-4. Na Railway, em *Variables*:
+4. **Security → Authorised IPs**: **desligue o bloqueio por IP**. O Brevo só
+   aceita envio de IP que esteja na lista, e a Railway troca o IP do servidor a
+   cada deploy — autorizar um IP só funciona até a próxima publicação. Com o
+   bloqueio ligado, o pedido de link responde "o Brevo bloqueou o envio porque
+   não reconhece o IP deste servidor".
+5. Na Railway, em *Variables*:
 
    ```
    BREVO_API_KEY=xkeysib-...
