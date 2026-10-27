@@ -511,6 +511,99 @@ a { color: var(--casca); }
 
 .confirmar { margin-top: 10px; }
 
+/* ---------- entrega (fechamento) ---------- */
+
+.barra-entrega {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+#rodada-entrega { width: 100%; min-width: 0; }
+
+.progresso-entrega {
+  display: grid;
+  gap: 6px;
+  margin: 2px 0 14px;
+  font-size: 13px;
+  color: var(--tinta-fraca);
+}
+
+.progresso-entrega b { color: var(--tinta); font-family: var(--mono); }
+
+.trilho-entrega {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--linha);
+  overflow: hidden;
+}
+
+.trilho-entrega i {
+  display: block;
+  height: 100%;
+  background: var(--verde);
+  border-radius: inherit;
+  transition: width 0.3s ease;
+}
+
+.cartao-entrega { border-left: 3px solid var(--polpa); }
+.cartao-entrega.entregue { border-left-color: var(--verde); opacity: 0.55; }
+.cartao-entrega.entregue h3 { text-decoration: line-through; text-decoration-thickness: 1px; }
+
+.situacao.pago { background: #e8f6ef; color: #05663f; }
+.situacao.avisou { background: #fdefe2; color: #8a4b12; }
+
+.pessoa ul.itens-entrega {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--tinta);
+}
+
+.itens-entrega li { display: flex; align-items: center; gap: 8px; }
+.itens-entrega .disco { flex: none; }
+
+.qtd-entrega {
+  flex: none;
+  min-width: 34px;
+  font-family: var(--mono);
+  font-size: 17px;
+  text-align: right;
+}
+
+.rodape-entrega {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--linha);
+  font-size: 13px;
+  font-family: var(--mono);
+}
+
+.rodape-entrega .interruptor { font-family: inherit; font-weight: 600; }
+
+@media (max-width: 600px) {
+  .barra-entrega { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
+
+/* "Imprimir" na entrega: só a lista de separação vai pro papel. */
+@media print {
+  body.imprimindo-entrega > *:not(#aba-fechamento),
+  body.imprimindo-entrega #aba-fechamento > *:not(#bloco-entrega),
+  body.imprimindo-entrega .barra-entrega,
+  body.imprimindo-entrega .trilho-entrega,
+  body.imprimindo-entrega #bloco-entrega .acoes { display: none !important; }
+  body.imprimindo-entrega #bloco-entrega { border: 0; padding: 0; }
+  body.imprimindo-entrega .cartao-entrega { break-inside: avoid; opacity: 1; }
+}
+
 /* ---------- rastreio ---------- */
 
 .rastreio-rodada {

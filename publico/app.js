@@ -1156,6 +1156,7 @@ async function carregarFechamento() {
     desenharPendencias(pendentes.pendencias, pendentes.total);
     const historico = await api('/api/rodadas');
     desenharHistorico(historico.rodadas);
+    await carregarEntrega(historico.rodadas);
     await carregarMelhorDia();
   } catch (falha) {
     torradeira(falha.message, true);
@@ -1388,6 +1389,115 @@ function desenharHistorico(rodadas) {
           .join('')}
       </tbody>
     </table>`;
+}
+
+/**
+ * Entrega: o que separar pra cada pessoa quando a compra chega.
+ *
+ * Quando as caixas chegam a rodada normalmente já foi fechada, então a lista não
+ * pode ficar presa à rodada aberta: por padrão vai a última fechada com pedido.
+ */
+const entrega = { rodadaId: null, rodadas: [], rodada: null, resumo: null, busca: '' };
+
+async function carregarEntrega(rodadas, rodadaId) {
+  if (rodadas) entrega.rodadas = rodadas;
+  const existe = (id) => entrega.rodadas.some((r) => r.id === id);
+  const padrao =
+    entrega.rodadas.find((r) => !r.aberta && r.pessoas > 0) || entrega.rodadas.find((r) => r.aberta) || entrega.rodadas[0];
+  entrega.rodadaId = existe(rodadaId) ? rodadaId : existe(entrega.rodadaId) ? entrega.rodadaId : padrao && padrao.id;
+
+  $('#rodada-entrega').innerHTML = entrega.rodadas
+    .map(
+      (r) =>
+        `<option value="${esc(r.id)}" ${r.id === entrega.rodadaId ? 'selected' : ''}>${esc(r.nome)}${r.aberta ? ' (aberta)' : ''} — ${r.pessoas} pessoa${r.pessoas === 1 ? '' : 's'}</option>`
+    )
+    .join('');
+
+  if (!entrega.rodadaId) {
+    entrega.resumo = null;
+    return desenharEntrega();
+  }
+  try {
+    const dados = await api(`/api/rodadas/${encodeURIComponent(entrega.rodadaId)}`);
+    entrega.rodada = dados.rodada;
+    entrega.resumo = dados.resumo;
+  } catch (falha) {
+    entrega.resumo = null;
+    torradeira(falha.message, true);
+  }
+  desenharEntrega();
+}
+
+function desenharEntrega() {
+  const resumo = entrega.resumo;
+  if (!resumo || !resumo.pessoas.length) {
+    $('#progresso-entrega').innerHTML = '';
+    $('#lista-entrega').innerHTML = '<p class="vazio">Ninguém pediu nada nesta rodada.</p>';
+    return;
+  }
+
+  const entregues = resumo.pessoas.filter((p) => p.entregueEm).length;
+  const total = resumo.pessoas.length;
+  $('#progresso-entrega').innerHTML = `
+    <span><b>${entregues}</b> de ${total} entregue${total === 1 ? '' : 's'} · ${resumo.totalCaixas} caixa${resumo.totalCaixas === 1 ? '' : 's'} na rodada</span>
+    <span class="trilho-entrega" aria-hidden="true"><i style="width:${((entregues / total) * 100).toFixed(1)}%"></i></span>`;
+
+  const busca = semAcentoTela(entrega.busca.trim());
+  const visiveis = resumo.pessoas
+    .filter((p) => !busca || semAcentoTela(p.nome).includes(busca))
+    // Quem falta receber fica em cima; quem já levou desce e apaga.
+    .sort((a, b) => Boolean(a.entregueEm) - Boolean(b.entregueEm));
+
+  if (!visiveis.length) {
+    $('#lista-entrega').innerHTML = '<p class="vazio">Ninguém com esse nome nesta rodada.</p>';
+    return;
+  }
+
+  $('#lista-entrega').innerHTML = visiveis
+    .map((pessoa) => {
+      const caixas = pessoa.itens.reduce((soma, i) => soma + i.quantidade, 0);
+      const pagamento = pessoa.confirmadoEm
+        ? { classe: 'pago', texto: 'pago' }
+        : pessoa.pagoEm
+          ? { classe: 'avisou', texto: 'avisou que pagou' }
+          : { classe: 'devendo', texto: 'não pagou' };
+      return `
+      <div class="pessoa cartao-entrega ${pessoa.entregueEm ? 'entregue' : ''}" data-usuario="${esc(pessoa.usuarioId)}">
+        <h3>${esc(pessoa.nome)} <span class="situacao ${pagamento.classe}">${pagamento.texto}</span></h3>
+        <ul class="itens-entrega">
+          ${pessoa.itens
+            .map(
+              (i) => `
+            <li>
+              <b class="qtd-entrega">${i.quantidade}×</b>
+              <span class="disco pequeno" style="--cor:${corDe(i.categoria)}" aria-hidden="true"></span>
+              <span>${esc(i.nome)}</span>
+            </li>`
+            )
+            .join('')}
+        </ul>
+        <div class="rodape-entrega">
+          <span>${caixas} caixa${caixas === 1 ? '' : 's'} · ${dinheiro(pessoa.total)}</span>
+          <label class="interruptor">
+            <input type="checkbox" data-acao="entregar" ${pessoa.entregueEm ? 'checked' : ''}>
+            <span>Entregue</span>
+          </label>
+        </div>
+        ${pessoa.entregueEm ? `<p class="quem">Entregue em ${quandoFoi(pessoa.entregueEm)}.</p>` : ''}
+      </div>`;
+    })
+    .join('');
+}
+
+/** Só pra busca: "joao" acha "João". */
+function semAcentoTela(texto) {
+  return texto.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+}
+
+function imprimirEntrega() {
+  document.body.classList.add('imprimindo-entrega');
+  window.addEventListener('afterprint', () => document.body.classList.remove('imprimindo-entrega'), { once: true });
+  window.print();
 }
 
 function textoDaLista() {
@@ -2848,6 +2958,35 @@ $('#lista-pendencias').addEventListener('change', async (evento) => {
     });
     torradeira(caixa.checked ? 'Pagamento confirmado.' : 'Confirmação desfeita.');
     await carregarFechamento();
+  } catch (falha) {
+    caixa.checked = !caixa.checked;
+    caixa.disabled = false;
+    torradeira(falha.message, true);
+  }
+});
+
+$('#rodada-entrega').addEventListener('change', (evento) => carregarEntrega(null, evento.target.value));
+$('#busca-entrega').addEventListener('input', (evento) => {
+  entrega.busca = evento.target.value;
+  desenharEntrega();
+});
+$('#botao-imprimir-entrega').addEventListener('click', imprimirEntrega);
+
+$('#lista-entrega').addEventListener('change', async (evento) => {
+  const caixa = evento.target.closest('input[data-acao="entregar"]');
+  if (!caixa) return;
+  const cartao = caixa.closest('.cartao-entrega');
+  caixa.disabled = true;
+  try {
+    const { pedido } = await api(`/api/pedidos/${cartao.dataset.usuario}/entrega`, {
+      method: 'PATCH',
+      corpo: { entregue: caixa.checked, rodada: entrega.rodadaId }
+    });
+    // Só muda a marca local: recarregar a aba inteira a cada caixa entregue seria lento no celular.
+    const pessoa = entrega.resumo.pessoas.find((p) => p.usuarioId === cartao.dataset.usuario);
+    if (pessoa) pessoa.entregueEm = pedido.entregueEm;
+    torradeira(caixa.checked ? `${pedido.nome} recebeu.` : 'Entrega desfeita.');
+    desenharEntrega();
   } catch (falha) {
     caixa.checked = !caixa.checked;
     caixa.disabled = false;

@@ -119,6 +119,8 @@ create table if not exists pedidos (
 
 alter table pedidos add column if not exists pago_em       timestamptz;
 alter table pedidos add column if not exists confirmado_em timestamptz;
+-- O espremedor marcando que já entregou as caixas da pessoa, quando a compra chega.
+alter table pedidos add column if not exists entregue_em   timestamptz;
 
 -- Histórico de preços: uma linha por vez que o preço de um produto mudou.
 -- É o que permite dizer se o preço de hoje está acima ou abaixo do normal e

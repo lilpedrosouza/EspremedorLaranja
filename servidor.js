@@ -440,7 +440,8 @@ function resumoDaRodada(pedidos) {
       total: totalPessoa,
       capsulas: capsulasPessoa,
       pagoEm: pedido.pagoEm,
-      confirmadoEm: pedido.confirmadoEm
+      confirmadoEm: pedido.confirmadoEm,
+      entregueEm: pedido.entregueEm
     });
   }
 
@@ -1335,6 +1336,17 @@ async function tratarApi(requisicao, resposta, url) {
     const alvo = corpo.rodada ? await banco.rodadaPorId(String(corpo.rodada)) : await banco.garantirRodadaAberta(criarRodada);
     if (!alvo) return erro(resposta, 404, 'Rodada não encontrada.');
     const pedido = await banco.confirmarPagamento(alvo.id, casaPagamento[1], corpo.confirmado !== false);
+    if (!pedido) return erro(resposta, 404, 'Essa pessoa não tem pedido nessa rodada.');
+    return responderJson(resposta, 200, { pedido });
+  }
+
+  const casaEntrega = rota.match(/^\/api\/pedidos\/([\w-]+)\/entrega$/);
+  if (casaEntrega && metodo === 'PATCH') {
+    if (!exigeEspremedor()) return;
+    const corpo = await lerCorpo(requisicao);
+    const alvo = corpo.rodada ? await banco.rodadaPorId(String(corpo.rodada)) : await banco.garantirRodadaAberta(criarRodada);
+    if (!alvo) return erro(resposta, 404, 'Rodada não encontrada.');
+    const pedido = await banco.marcarEntregue(alvo.id, casaEntrega[1], corpo.entregue !== false);
     if (!pedido) return erro(resposta, 404, 'Essa pessoa não tem pedido nessa rodada.');
     return responderJson(resposta, 200, { pedido });
   }

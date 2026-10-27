@@ -120,6 +120,10 @@ de `requestAnimationFrame` guiado pelo relógio (não por quadro), com o ponteir
   preço congelados no momento do pedido, e não uma referência ao catálogo.
 - **Pagamento**: duas marcações independentes. `pago_em` é a pessoa avisando; `confirmado_em`
   é o espremedor confirmando que caiu. Alterar o pedido zera as duas (o valor mudou).
+- **Entrega**: `entregue_em` é o espremedor marcando que entregou as caixas da pessoa. A
+  seção Entrega do fechamento escolhe a rodada (por padrão a última fechada com pedido,
+  porque a compra chega depois do fechamento) e lê de `/api/rodadas/:id`. Alterar o
+  pedido também zera a entrega.
 - **Dívida sobrevive ao fechamento**: `/api/minhas-rodadas` (para quem deve) e
   `/api/pendencias` (para o espremedor) leem pedidos de rodadas já fechadas com
   `confirmado_em is null`.
