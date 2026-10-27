@@ -1069,10 +1069,271 @@ tr:last-child td { border-bottom: 0; }
 
 .dia-valor { font-family: var(--mono); font-size: 12px; text-align: right; }
 
+/* ---------- sorteio de brindes ---------- */
+
+.colunas-sorteio {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 24px;
+  align-items: start;
+}
+
+.palco-roleta {
+  display: grid;
+  justify-items: center;
+  gap: 20px;
+  padding: 28px 18px 24px;
+  background: radial-gradient(circle at 50% 36%, #fff6ec 0, var(--papel) 68%);
+}
+
+.roleta {
+  position: relative;
+  width: min(440px, 100%);
+  aspect-ratio: 1;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* As três camadas ocupam o mesmo quadrado; só a do meio gira. */
+.roleta > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.roleta-moldura { filter: drop-shadow(0 16px 26px rgba(122, 47, 8, 0.3)); }
+
+/* Camada própria na placa de vídeo: girar não redesenha o resto da página. */
+.roleta-roda { transform-origin: 50% 50%; will-change: transform; }
+
+.roleta-roda text {
+  font-family: var(--display);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.roleta-roda .roda-vazia { fill: var(--tinta-fraca); font-family: var(--corpo); font-weight: 500; font-size: 15px; }
+.roleta-roda .divisoes line { stroke: rgba(255, 248, 239, 0.6); stroke-width: 1.4; }
+.roleta-roda .pinos circle { fill: #fff8ef; stroke: rgba(58, 22, 4, 0.4); stroke-width: 1; }
+.roleta-roda .anel-miolo { fill: rgba(58, 22, 4, 0.16); }
+
+.roleta-frente { pointer-events: none; }
+
+/* As outras desbotam em vez de só sumir: com transparência pura o fundo escuro
+   aparece por baixo e a roda inteira fica marrom. */
+.fatia { transition: opacity 0.45s ease, filter 0.45s ease; }
+.fatia.apagada { opacity: 0.55; filter: saturate(0.25) brightness(1.08); }
+.fatia.vencedora > path,
+.fatia.vencedora > circle {
+  stroke: #fff;
+  stroke-width: 4;
+  stroke-linejoin: round;
+  animation: fatia-acesa 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes fatia-acesa {
+  from { filter: brightness(1); }
+  to   { filter: brightness(1.16) saturate(1.1); }
+}
+
+/* Lâmpadas do aro: acesas paradas, piscando alternadas no giro, todas juntas
+   quando sai o ganhador. */
+.lampada {
+  fill: #ffe7c4;
+  filter: drop-shadow(0 0 2.5px rgba(255, 214, 150, 0.9));
+}
+
+.roleta.girando .lampada { animation: lampada 0.34s steps(1, end) infinite; }
+.roleta.girando .lampada.impar { animation-delay: -0.17s; }
+.roleta.venceu .lampada { animation: lampada 0.24s steps(1, end) infinite; }
+
+@keyframes lampada {
+  0%  { fill: #fff8de; filter: drop-shadow(0 0 4px rgba(255, 226, 160, 1)); }
+  50% { fill: #9a4a12; filter: none; }
+}
+
+/* O miolo é o botão de girar, com a laranja da marca. */
+.roleta-miolo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 23%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 4px solid #fff;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 30%, #ffffff, #efe8e1 72%);
+  box-shadow: 0 6px 16px rgba(58, 22, 4, 0.38), inset 0 -3px 6px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  transition: transform 0.18s cubic-bezier(0.3, 1.6, 0.5, 1), box-shadow 0.18s ease;
+}
+
+.roleta-miolo svg { width: 56%; height: 56%; transition: transform 0.4s cubic-bezier(0.3, 1.6, 0.5, 1); }
+.roleta-miolo span {
+  margin-top: -2px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--casca);
+  transition: opacity 0.2s ease;
+}
+
+.roleta-miolo:hover:not(:disabled) { transform: translate(-50%, -50%) scale(1.07); box-shadow: 0 9px 22px rgba(58, 22, 4, 0.42); }
+.roleta-miolo:hover:not(:disabled) svg { transform: rotate(-12deg); }
+.roleta-miolo:active:not(:disabled) { transform: translate(-50%, -50%) scale(0.95); }
+.roleta-miolo:disabled { cursor: default; }
+.roleta.girando .roleta-miolo span,
+.roleta.venceu .roleta-miolo span { opacity: 0; }
+
+.controles-sorteio {
+  width: min(440px, 100%);
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.controles-sorteio .campo { flex: 1 1 180px; min-width: 0; margin-bottom: 0; }
+.controles-sorteio .campo input { min-width: 0; }
+
+#rodada-sorteio { width: 100%; min-width: 0; }
+.controles-sorteio .botao { flex: none; }
+
+/* O anúncio do ganhador. */
+.revelacao {
+  width: min(440px, 100%);
+  text-align: center;
+  padding: 18px 18px 20px;
+  border: 1px solid #f6d3b1;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fff1e2, #ffffff);
+  animation: revelacao-surge 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+
+.revelacao .rotulo {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--casca);
+}
+
+.revelacao h3 {
+  margin: 4px 0 6px;
+  font-family: var(--display);
+  font-size: clamp(28px, 6vw, 40px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.revelacao h3 span {
+  display: inline-block;
+  white-space: pre;
+  animation: letra-cai 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+  animation-delay: calc(var(--i) * 38ms + 140ms);
+}
+
+.revelacao .quem { margin: 0 0 4px; }
+.revelacao .botao { margin-top: 10px; }
+
+@keyframes revelacao-surge {
+  from { opacity: 0; transform: translateY(12px) scale(0.94); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes letra-cai {
+  from { opacity: 0; transform: translateY(-0.5em) scale(0.6); }
+  to   { opacity: 1; transform: none; }
+}
+
+.confete {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 70;
+}
+
+/* Lista de quem participa. */
+.acoes-rapidas { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+
+.participantes { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+
+.participante label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.participante label:hover { background: #f6f4f1; }
+.participante input { width: 16px; height: 16px; margin: 0; accent-color: var(--casca); flex: none; }
+.participante.fora .nome { color: var(--tinta-fraca); }
+
+/* A bolinha tem a cor da fatia da pessoa na roda: dá para achar o nome rápido. */
+.cor-fatia {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--cor, transparent);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14);
+  transition: background 0.2s ease;
+}
+
+.participante .nome {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selo-volta {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #fdefe2;
+  color: #8a4b12;
+  border: 1px solid #f2d0bc;
+}
+
+.aviso-volta {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #f2d0bc;
+  border-radius: 8px;
+  background: #fff6ea;
+  color: #6e3a0c;
+  font-size: 13px;
+}
+
+.tabela-rolavel { overflow-x: auto; }
+
 /* ---------- responsivo ---------- */
 
 @media (max-width: 900px) {
   .colunas { grid-template-columns: minmax(0, 1fr); }
+  .colunas-sorteio { grid-template-columns: minmax(0, 1fr); }
+  .palco-roleta { padding: 20px 12px; }
+  .controles-sorteio { flex-wrap: wrap; }
+  .controles-sorteio .botao { flex: 1 1 100%; }
   /* Numa coluna só, o painel volta a ser um bloco comum: prender a altura aqui
      criaria uma rolagem dentro da outra. A página inteira rola normalmente. */
   .painel {

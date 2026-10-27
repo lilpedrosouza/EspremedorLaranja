@@ -460,12 +460,13 @@ function trocarAba(aba) {
   for (const botao of $$('#navegacao button')) {
     botao.setAttribute('aria-current', String(botao.dataset.aba === aba));
   }
-  for (const nome of ['loja', 'rastreio', 'fechamento', 'catalogo', 'pessoas']) {
+  for (const nome of ['loja', 'rastreio', 'fechamento', 'catalogo', 'sorteio', 'pessoas']) {
     $(`#aba-${nome}`).classList.toggle('escondido', nome !== aba);
   }
   if (aba === 'rastreio') carregarRastreio();
   if (aba === 'fechamento') carregarFechamento();
   if (aba === 'catalogo') desenharCatalogo();
+  if (aba === 'sorteio') carregarSorteio(sorteio.rodadaEscolhida);
   if (aba === 'pessoas') carregarPessoas();
   window.scrollTo({ top: 0 });
 }
@@ -1689,6 +1690,768 @@ async function gerarMeuCodigo() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Sorteio de brindes                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Tons da laranja, alternando claro e escuro para que duas fatias vizinhas
+ * nunca se confundam. Cada tom vem com a cor de texto que dá contraste nele.
+ */
+const FATIAS = [
+  { fundo: '#f5811f', texto: '#2a1406' },
+  { fundo: '#7a2f08', texto: '#fff4e8' },
+  { fundo: '#ffc58a', texto: '#4a2408' },
+  { fundo: '#2f7d45', texto: '#ffffff' },
+  { fundo: '#c25211', texto: '#fff4e8' },
+  { fundo: '#ffe3c2', texto: '#5a2c0a' },
+  { fundo: '#a8410a', texto: '#fff4e8' },
+  { fundo: '#7cc48a', texto: '#10331a' }
+];
+
+// Medidas no sistema do viewBox (-200 a 200). A tela escala tudo junto.
+const RAIO_RODA = 172;
+const RAIO_PINOS = 163;
+const RAIO_MIOLO = 46;
+const PIVO_PONTEIRO = -184;
+const DEFLEXAO_MAXIMA = 26; // graus que o ponteiro deita quando um pino o empurra
+const LAMPADAS = 20;
+const CHAVE_SOM = 'espremedor_som_sorteio';
+
+const sorteio = {
+  dados: null,
+  rodadaEscolhida: null,
+  marcados: new Set(),
+  fatias: 0,
+  rotacao: 0,
+  ponteiro: 0,
+  alvoPonteiro: 0,
+  velPonteiro: 0,
+  movimento: null,
+  quadro: null,
+  ultimoQuadro: 0,
+  ultimoTique: 0,
+  girando: false,
+  som: lerPreferenciaDeSom(),
+  audio: null
+};
+
+const mod = (valor, divisor) => ((valor % divisor) + divisor) % divisor;
+const esperar = (ms) => new Promise((pronto) => setTimeout(pronto, ms));
+
+function movimentoReduzido() {
+  return Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+/** "Ana", "Ana e Bia", "Ana, Bia e Caio". */
+function nomesComE(nomes) {
+  if (nomes.length < 2) return nomes.join('');
+  return `${nomes.slice(0, -1).join(', ')} e ${nomes[nomes.length - 1]}`;
+}
+
+function participantesDaRoda() {
+  if (!sorteio.dados) return [];
+  return sorteio.dados.candidatos.filter((c) => sorteio.marcados.has(c.usuarioId));
+}
+
+function corDaFatia(indice, total) {
+  // Com a paleta dando a volta, a última fatia pode cair na mesma cor da
+  // primeira — e as duas são vizinhas na roda. Aí a última pega outro tom.
+  if (total > 1 && indice === total - 1 && indice % FATIAS.length === 0) return FATIAS[3];
+  return FATIAS[indice % FATIAS.length];
+}
+
+/** Ângulo em graus, contado do topo no sentido do relógio, como na roleta. */
+function ponto(angulo, raio) {
+  const radianos = (angulo * Math.PI) / 180;
+  return [(raio * Math.sin(radianos)).toFixed(2), (-raio * Math.cos(radianos)).toFixed(2)];
+}
+
+/** O nome que cabe na fatia: inteiro, depois "Pedro S.", por último cortado. */
+function nomeNaFatia(nome, maximo) {
+  const limpo = String(nome).trim().replace(/\s+/g, ' ');
+  if (limpo.length <= maximo) return limpo;
+  const partes = limpo.split(' ');
+  const curto = partes.length > 1 ? `${partes[0]} ${partes[partes.length - 1][0]}.` : limpo;
+  if (curto.length <= maximo) return curto;
+  return `${limpo.slice(0, Math.max(1, maximo - 1))}…`;
+}
+
+/**
+ * O aro com as lâmpadas, o brilho e o ponteiro. Nada disso gira: só a roda do
+ * meio se mexe, e o brilho parado por cima é o que dá a impressão de vidro.
+ */
+function desenharMoldura() {
+  const lampadas = Array.from({ length: LAMPADAS }, (_, i) => {
+    const [x, y] = ponto((360 / LAMPADAS) * i, 185);
+    return `<circle class="lampada ${i % 2 ? 'impar' : 'par'}" cx="${x}" cy="${y}" r="4.4"/>`;
+  }).join('');
+
+  $('#moldura-roleta').innerHTML = `
+    <defs>
+      <linearGradient id="aro-roleta" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#d4620d"/>
+        <stop offset="1" stop-color="#6b2706"/>
+      </linearGradient>
+    </defs>
+    <circle r="198" fill="url(#aro-roleta)"/>
+    <circle r="196" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="1.5"/>
+    <circle r="${RAIO_RODA + 1.5}" fill="#3a1604"/>
+    <g class="lampadas">${lampadas}</g>`;
+
+  $('#frente-roleta').innerHTML = `
+    <defs>
+      <radialGradient id="sombra-borda" r="0.5">
+        <stop offset="0.8" stop-color="#000" stop-opacity="0"/>
+        <stop offset="1" stop-color="#000" stop-opacity="0.24"/>
+      </radialGradient>
+      <radialGradient id="brilho-roleta" cx="0.32" cy="0.24" r="0.58">
+        <stop offset="0" stop-color="#fff" stop-opacity="0.34"/>
+        <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+      </radialGradient>
+      <filter id="sombra-ponteiro" x="-80%" y="-30%" width="260%" height="160%">
+        <feDropShadow dx="0" dy="2.5" stdDeviation="2" flood-color="#2a1406" flood-opacity="0.45"/>
+      </filter>
+    </defs>
+    <circle r="${RAIO_RODA}" fill="url(#sombra-borda)"/>
+    <circle r="${RAIO_RODA}" fill="url(#brilho-roleta)"/>
+    <g id="ponteiro" filter="url(#sombra-ponteiro)">
+      <path d="M0 -146 L-10.5 -178 A12 12 0 1 1 10.5 -178 Z" fill="#1d1f22"/>
+      <path d="M-1.5 -154 L-6.5 -175" stroke="rgba(255,255,255,.22)" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="0" cy="${PIVO_PONTEIRO}" r="4.6" fill="#f5811f"/>
+    </g>`;
+}
+
+function desenharRoda() {
+  const lista = participantesDaRoda();
+  const roda = $('#roda');
+  sorteio.fatias = lista.length;
+
+  if (!lista.length) {
+    // Sem fatia não há o que girar, e o texto precisa ficar em pé.
+    sorteio.rotacao = 0;
+    roda.innerHTML = `
+      <circle r="${RAIO_RODA}" fill="#f4f0eb"/>
+      <circle r="${RAIO_RODA - 24}" fill="none" stroke="#e2d9cf" stroke-width="1.5" stroke-dasharray="3 7"/>
+      <text class="roda-vazia" y="${-(RAIO_MIOLO + 40)}" text-anchor="middle">Marque quem participa</text>`;
+    aplicarRotacao();
+    ligarQuadros();
+    return;
+  }
+
+  const total = lista.length;
+  const fatia = 360 / total;
+  // A letra acompanha a largura da fatia, e o nome corta no que sobra entre o
+  // miolo e a borda.
+  const letra = Math.max(9, Math.min(15, ((Math.PI / 180) * fatia * 118) * 0.42));
+  const cabe = Math.max(3, Math.floor((RAIO_RODA - 18 - (RAIO_MIOLO + 10)) / (letra * 0.56)));
+
+  const fatias = lista
+    .map((pessoa, i) => {
+      const cor = corDaFatia(i, total);
+      let forma;
+      if (total === 1) {
+        forma = `<circle r="${RAIO_RODA}" fill="${cor.fundo}"/>`;
+      } else {
+        const [x0, y0] = ponto(i * fatia, RAIO_RODA);
+        const [x1, y1] = ponto((i + 1) * fatia, RAIO_RODA);
+        forma = `<path d="M0 0 L${x0} ${y0} A${RAIO_RODA} ${RAIO_RODA} 0 ${fatia > 180 ? 1 : 0} 1 ${x1} ${y1} Z" fill="${cor.fundo}"/>`;
+      }
+      const meio = i * fatia + fatia / 2;
+      return `
+        <g class="fatia" data-usuario="${esc(pessoa.usuarioId)}">
+          ${forma}
+          <g transform="rotate(${(meio - 90).toFixed(3)})">
+            <text x="${RAIO_RODA - 18}" y="0" text-anchor="end" dominant-baseline="central"
+                  fill="${cor.texto}" font-size="${letra.toFixed(1)}">${esc(nomeNaFatia(pessoa.nome, cabe))}</text>
+          </g>
+        </g>`;
+    })
+    .join('');
+
+  const divisoes =
+    total > 1
+      ? lista
+          .map((_, i) => {
+            const [x, y] = ponto(i * fatia, RAIO_RODA);
+            return `<line x1="0" y1="0" x2="${x}" y2="${y}"/>`;
+          })
+          .join('')
+      : '';
+  const pinos = lista
+    .map((_, i) => {
+      const [x, y] = ponto(i * fatia, RAIO_PINOS);
+      return `<circle cx="${x}" cy="${y}" r="3.6"/>`;
+    })
+    .join('');
+
+  roda.innerHTML = `
+    ${fatias}
+    <g class="divisoes">${divisoes}</g>
+    <g class="pinos">${pinos}</g>
+    <circle class="anel-miolo" r="${RAIO_MIOLO + 7}"/>`;
+  aplicarRotacao();
+  // Com pinos em outro lugar, o ponteiro pode ter ficado encostado num deles.
+  ligarQuadros();
+}
+
+function aplicarRotacao() {
+  $('#roda').style.transform = `rotate(${sorteio.rotacao.toFixed(3)}deg)`;
+  const ponteiro = $('#ponteiro');
+  if (ponteiro) ponteiro.setAttribute('transform', `rotate(${sorteio.ponteiro.toFixed(2)} 0 ${PIVO_PONTEIRO})`);
+}
+
+/* ---- movimento ---- */
+
+const suave = (t) => 0.5 - Math.cos(Math.PI * t) / 2;
+
+/**
+ * Arrancada curta e freio longo.
+ *
+ * A velocidade sobe em linha reta nos primeiros 6% do tempo (o empurrão da mão)
+ * e depois cai ao cubo até zero. O fim é que dá o suspense: nos últimos
+ * segundos a roda se arrasta pino a pino. A posição é a integral dessa
+ * velocidade, dividida pelo total para terminar exatamente em 1.
+ */
+function arrancadaEFreio(t) {
+  const arranque = 0.06;
+  const total = arranque / 2 + (1 - arranque) / 4;
+  if (t < arranque) return (t * t) / (2 * arranque) / total;
+  const resto = (t - arranque) / (1 - arranque);
+  return (arranque / 2 + ((1 - arranque) * (1 - Math.pow(1 - resto, 4))) / 4) / total;
+}
+
+function moverRoda(ate, duracao, curva) {
+  return new Promise((terminar) => {
+    sorteio.movimento = { de: sorteio.rotacao, ate, inicio: performance.now(), duracao, curva, terminar };
+    ligarQuadros();
+  });
+}
+
+function ligarQuadros() {
+  if (sorteio.quadro) return;
+  sorteio.ultimoQuadro = performance.now();
+  sorteio.quadro = requestAnimationFrame(quadroDaRoleta);
+}
+
+/**
+ * Um quadro da animação. Tudo é calculado pelo relógio, e não por quadro
+ * contado: em tela de 60 Hz ou de 144 Hz a roda leva o mesmo tempo e para no
+ * mesmo lugar. O laço se desliga sozinho quando roda e ponteiro sossegam.
+ */
+function quadroDaRoleta(agora) {
+  const dt = Math.min(0.05, Math.max(0, (agora - sorteio.ultimoQuadro) / 1000));
+  sorteio.ultimoQuadro = agora;
+  const antes = sorteio.rotacao;
+
+  const movimento = sorteio.movimento;
+  if (movimento) {
+    const t = Math.min(1, Math.max(0, (agora - movimento.inicio) / movimento.duracao));
+    sorteio.rotacao = movimento.de + (movimento.ate - movimento.de) * movimento.curva(t);
+    if (t >= 1) {
+      sorteio.movimento = null;
+      movimento.terminar();
+    }
+  }
+
+  const velocidade = dt ? (sorteio.rotacao - antes) / dt : 0;
+  atualizarPonteiro(velocidade, dt);
+  tiqueSePassouPino(antes, sorteio.rotacao);
+  aplicarRotacao();
+
+  const sossegou =
+    !sorteio.movimento &&
+    Math.abs(sorteio.velPonteiro) < 0.4 &&
+    Math.abs(sorteio.ponteiro - sorteio.alvoPonteiro) < 0.05;
+  sorteio.quadro = sossegou ? null : requestAnimationFrame(quadroDaRoleta);
+}
+
+/**
+ * O ponteiro de verdade: o pino que chega empurra a ponta, e quando escapa ela
+ * volta numa mola, com um balanço de sobra. Rápido demais para voltar entre um
+ * pino e outro, o ponteiro fica deitado e tremendo, como numa roleta de feira.
+ *
+ * A roda gira no sentido do relógio, então o pino que vem chegando está à
+ * esquerda do ponteiro: é quando a posição dentro da fatia vai chegando a zero.
+ */
+function atualizarPonteiro(velocidade, dt) {
+  let alvo = 0;
+  let empurrado = false;
+
+  if (sorteio.fatias) {
+    const fatia = 360 / sorteio.fatias;
+    const posicao = mod(-sorteio.rotacao, fatia);
+    const contato = Math.min(fatia * 0.4, 7);
+    const pinosPorSegundo = Math.abs(velocidade) / fatia;
+
+    if (pinosPorSegundo > 14) {
+      alvo = -Math.sign(velocidade) * DEFLEXAO_MAXIMA * (0.5 + Math.random() * 0.14);
+    } else if (velocidade >= 0 && posicao < contato) {
+      alvo = -DEFLEXAO_MAXIMA * (1 - posicao / contato);
+      empurrado = true;
+    } else if (velocidade < 0 && fatia - posicao < contato) {
+      // Girando para trás (a puxada antes do arranque), o pino vem do outro lado.
+      alvo = DEFLEXAO_MAXIMA * (1 - (fatia - posicao) / contato);
+      empurrado = true;
+    }
+  }
+
+  const alemDoAtual = alvo < 0 ? alvo < sorteio.ponteiro : alvo > sorteio.ponteiro;
+  if (empurrado && alemDoAtual) {
+    // O pino manda: a ponta vai junto com ele, sem mola.
+    sorteio.ponteiro = alvo;
+    sorteio.velPonteiro = 0;
+  } else {
+    const mola = 320;
+    const amortecimento = 15;
+    sorteio.velPonteiro += ((alvo - sorteio.ponteiro) * mola - sorteio.velPonteiro * amortecimento) * dt;
+    sorteio.ponteiro += sorteio.velPonteiro * dt;
+  }
+  sorteio.alvoPonteiro = alvo;
+}
+
+function tiqueSePassouPino(antes, depois) {
+  if (!sorteio.fatias || antes === depois) return;
+  const fatia = 360 / sorteio.fatias;
+  if (Math.floor(-antes / fatia) === Math.floor(-depois / fatia)) return;
+  // Na velocidade máxima passam dezenas de pinos por segundo. Um tique por
+  // pino viraria um zumbido; com o intervalo mínimo vira uma matraca.
+  const agora = performance.now();
+  if (agora - sorteio.ultimoTique < 38) return;
+  sorteio.ultimoTique = agora;
+  tocarTique();
+}
+
+/* ---- som ---- */
+
+function lerPreferenciaDeSom() {
+  try {
+    return localStorage.getItem(CHAVE_SOM) !== 'desligado';
+  } catch {
+    return true;
+  }
+}
+
+/** O navegador só libera áudio depois de um clique, então isto roda no clique. */
+function prepararAudio() {
+  if (!sorteio.som) return;
+  try {
+    if (!sorteio.audio) {
+      const Contexto = window.AudioContext || window.webkitAudioContext;
+      if (!Contexto) return;
+      sorteio.audio = new Contexto();
+    }
+    if (sorteio.audio.state === 'suspended') sorteio.audio.resume();
+  } catch {
+    sorteio.audio = null;
+  }
+}
+
+function nota(frequencia, quando, duracao, volume, tipo, frequenciaFinal) {
+  const audio = sorteio.audio;
+  const oscilador = audio.createOscillator();
+  const ganho = audio.createGain();
+  oscilador.type = tipo;
+  oscilador.frequency.setValueAtTime(frequencia, quando);
+  if (frequenciaFinal) oscilador.frequency.exponentialRampToValueAtTime(frequenciaFinal, quando + duracao);
+  ganho.gain.setValueAtTime(0.0001, quando);
+  ganho.gain.exponentialRampToValueAtTime(volume, quando + 0.004);
+  ganho.gain.exponentialRampToValueAtTime(0.0001, quando + duracao);
+  oscilador.connect(ganho).connect(audio.destination);
+  oscilador.start(quando);
+  oscilador.stop(quando + duracao + 0.02);
+}
+
+function tocarTique() {
+  if (!sorteio.som || !sorteio.audio) return;
+  nota(2100, sorteio.audio.currentTime, 0.035, 0.12, 'triangle', 900);
+}
+
+function tocarFanfarra() {
+  if (!sorteio.som || !sorteio.audio) return;
+  const t = sorteio.audio.currentTime + 0.02;
+  [523.25, 659.25, 783.99].forEach((frequencia, i) => nota(frequencia, t + i * 0.1, 0.32, 0.14, 'triangle'));
+  nota(1046.5, t + 0.3, 0.9, 0.16, 'triangle');
+  nota(1318.5, t + 0.3, 0.9, 0.05, 'sine');
+}
+
+function desenharBotaoSom() {
+  const botao = $('#botao-som');
+  botao.textContent = sorteio.som ? 'Som ligado' : 'Som desligado';
+  botao.setAttribute('aria-pressed', String(sorteio.som));
+}
+
+/* ---- confete ---- */
+
+/**
+ * Papel picado e rodelas de laranja saindo da roleta.
+ *
+ * Num canvas por cima da página, criado só para isso e jogado fora no fim. O
+ * estouro perde força rápido pela resistência do ar e a queda fica lenta, com
+ * cada papel balançando e virando — o achatamento vertical é o lado do papel
+ * que fica de frente.
+ */
+function soltarConfete(x, y) {
+  if (movimentoReduzido()) return;
+  const tela = document.createElement('canvas');
+  tela.className = 'confete';
+  tela.setAttribute('aria-hidden', 'true');
+  const largura = window.innerWidth;
+  const altura = window.innerHeight;
+  const densidade = Math.min(2, window.devicePixelRatio || 1);
+  tela.width = Math.round(largura * densidade);
+  tela.height = Math.round(altura * densidade);
+  document.body.appendChild(tela);
+  const ctx = tela.getContext('2d');
+  ctx.scale(densidade, densidade);
+
+  const cores = ['#f5811f', '#ffb066', '#a8410a', '#3f9e56', '#ffe3c2', '#7cc48a', '#c25211'];
+  const pedacos = Array.from({ length: 160 }, () => {
+    const angulo = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.4;
+    const forca = 520 + Math.random() * 900;
+    return {
+      x,
+      y,
+      vx: Math.cos(angulo) * forca,
+      vy: Math.sin(angulo) * forca,
+      giro: Math.random() * Math.PI * 2,
+      vGiro: (Math.random() - 0.5) * 12,
+      fase: Math.random() * Math.PI * 2,
+      vFase: 5 + Math.random() * 7,
+      tamanho: 5 + Math.random() * 6,
+      cor: cores[Math.floor(Math.random() * cores.length)],
+      rodela: Math.random() < 0.2
+    };
+  });
+
+  const DURACAO = 3.8;
+  const inicio = performance.now();
+  let antes = inicio;
+
+  function passo(agora) {
+    const dt = Math.min(0.033, Math.max(0, (agora - antes) / 1000));
+    antes = agora;
+    const idade = (agora - inicio) / 1000;
+    ctx.clearRect(0, 0, largura, altura);
+    ctx.globalAlpha = idade > DURACAO - 0.8 ? Math.max(0, (DURACAO - idade) / 0.8) : 1;
+
+    for (const p of pedacos) {
+      p.vy += 980 * dt;
+      p.vx -= p.vx * 2.6 * dt;
+      p.vy -= p.vy * 2.6 * dt;
+      p.fase += p.vFase * dt;
+      p.giro += p.vGiro * dt;
+      p.x += (p.vx + Math.sin(p.fase) * 40) * dt;
+      p.y += p.vy * dt;
+
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.giro);
+      if (p.rodela) {
+        const raio = p.tamanho * 0.8;
+        ctx.fillStyle = '#f5811f';
+        ctx.beginPath();
+        ctx.arc(0, 0, raio, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffc58a';
+        ctx.beginPath();
+        ctx.arc(0, 0, raio * 0.72, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#f5811f';
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        for (let gomo = 0; gomo < 6; gomo += 1) {
+          ctx.moveTo(0, 0);
+          ctx.lineTo(Math.cos((gomo * Math.PI) / 3) * raio * 0.72, Math.sin((gomo * Math.PI) / 3) * raio * 0.72);
+        }
+        ctx.stroke();
+      } else {
+        ctx.scale(1, Math.cos(p.fase));
+        ctx.fillStyle = p.cor;
+        ctx.fillRect(-p.tamanho / 2, -p.tamanho * 0.3, p.tamanho, p.tamanho * 0.6);
+      }
+      ctx.restore();
+    }
+
+    if (idade < DURACAO) requestAnimationFrame(passo);
+    else tela.remove();
+  }
+  requestAnimationFrame(passo);
+}
+
+/* ---- tela ---- */
+
+async function carregarSorteio(rodadaId) {
+  // Recarregar no meio do giro redesenharia a roda debaixo da animação.
+  if (sorteio.girando) return;
+  try {
+    const dados = await api(`/api/sorteio${rodadaId ? `?rodada=${encodeURIComponent(rodadaId)}` : ''}`);
+    acomodarMarcados(sorteio.dados, dados);
+    sorteio.dados = dados;
+    sorteio.rodadaEscolhida = dados.rodada ? dados.rodada.id : null;
+    esconderRevelacao();
+    desenharEscolhaDeRodada();
+    desenharParticipantes();
+    desenharRoda();
+    desenharHistoricoSorteios();
+  } catch (falha) {
+    torradeira(falha.message, true);
+  }
+}
+
+/**
+ * Quem fica marcado depois de recarregar.
+ *
+ * Rodada nova começa do padrão: todo mundo, menos quem já ganhou na volta. Na
+ * mesma rodada, o que o espremedor marcou à mão fica, e só muda quem trocou de
+ * situação: quem acabou de ganhar sai da roleta, e quando a volta fecha quem
+ * estava esperando a vez entra de novo.
+ */
+function acomodarMarcados(antes, depois) {
+  const mesmaRodada = antes && antes.rodada && depois.rodada && antes.rodada.id === depois.rodada.id;
+  if (!mesmaRodada) {
+    sorteio.marcados = new Set(depois.candidatos.filter((c) => !c.jaGanhou).map((c) => c.usuarioId));
+    return;
+  }
+  const anterior = new Map(antes.candidatos.map((c) => [c.usuarioId, c]));
+  const marcados = new Set();
+  for (const candidato of depois.candidatos) {
+    const velho = anterior.get(candidato.usuarioId);
+    let dentro;
+    if (!velho) dentro = !candidato.jaGanhou;
+    else if (!velho.jaGanhou && candidato.jaGanhou) dentro = false;
+    else if (velho.jaGanhou && !candidato.jaGanhou) dentro = true;
+    else dentro = sorteio.marcados.has(candidato.usuarioId);
+    if (dentro) marcados.add(candidato.usuarioId);
+  }
+  sorteio.marcados = marcados;
+}
+
+function desenharEscolhaDeRodada() {
+  const { rodadas, rodada } = sorteio.dados;
+  $('#rodada-sorteio').innerHTML = rodadas
+    .map(
+      (r) => `
+      <option value="${esc(r.id)}" ${rodada && r.id === rodada.id ? 'selected' : ''}>
+        ${esc(r.nome)}${r.aberta ? ' (aberta)' : ''} · ${r.pessoas} ${r.pessoas === 1 ? 'pessoa' : 'pessoas'}
+      </option>`
+    )
+    .join('');
+}
+
+function desenharParticipantes() {
+  const candidatos = sorteio.dados ? sorteio.dados.candidatos : [];
+  const lista = participantesDaRoda();
+  const posicao = new Map(lista.map((p, i) => [p.usuarioId, i]));
+
+  if (!candidatos.length) {
+    $('#resumo-participantes').textContent = 'Ninguém pediu nessa rodada.';
+    $('#lista-participantes').innerHTML = '<li class="vazio">Escolha outra rodada acima.</li>';
+    $('#aviso-volta').classList.add('escondido');
+    return;
+  }
+
+  $('#resumo-participantes').textContent = `${lista.length} de ${candidatos.length} na roleta.`;
+  $('#lista-participantes').innerHTML = candidatos
+    .map((c) => {
+      const indice = posicao.get(c.usuarioId);
+      const dentro = indice !== undefined;
+      const selo = c.jaGanhou
+        ? `<span class="selo-volta">${c.ganhouUltimo ? 'ganhou o último' : 'já ganhou'}</span>`
+        : '';
+      return `
+      <li class="participante ${dentro ? '' : 'fora'}">
+        <label>
+          <input type="checkbox" data-usuario="${esc(c.usuarioId)}" ${dentro ? 'checked' : ''} ${sorteio.girando ? 'disabled' : ''}>
+          <span class="cor-fatia" ${dentro ? `style="--cor:${corDaFatia(indice, lista.length).fundo}"` : ''}></span>
+          <span class="nome">${esc(c.nome)}</span>
+          ${selo}
+        </label>
+      </li>`;
+    })
+    .join('');
+  desenharAvisoDaVolta(candidatos, lista);
+}
+
+/**
+ * O aviso de quem está concorrendo fora da vez.
+ *
+ * Só avisa, não impede: a combinação é da turma, e às vezes tem motivo para
+ * deixar alguém de novo na roleta (falta gente, o brinde é para todos...).
+ */
+function desenharAvisoDaVolta(candidatos, lista) {
+  const aviso = $('#aviso-volta');
+  const repetidos = lista.filter((p) => p.jaGanhou);
+  if (!repetidos.length) {
+    aviso.classList.add('escondido');
+    return;
+  }
+  const faltam = candidatos.filter((c) => !c.jaGanhou).map((c) => c.nome);
+  const plural = repetidos.length > 1;
+  aviso.innerHTML =
+    `<b>${esc(nomesComE(repetidos.map((p) => p.nome)))} já ${plural ? 'ganharam' : 'ganhou'} nesta volta.</b> ` +
+    'A combinação é esperar todo mundo ganhar uma vez' +
+    (faltam.length ? ` — ainda ${faltam.length > 1 ? 'faltam' : 'falta'} ${esc(nomesComE(faltam))}` : '') +
+    '. Dá para sortear assim mesmo.';
+  aviso.classList.remove('escondido');
+}
+
+function desenharHistoricoSorteios() {
+  const sorteios = sorteio.dados ? sorteio.dados.sorteios : [];
+  if (!sorteios.length) {
+    $('#historico-sorteios').innerHTML = '<p class="vazio">Nenhum sorteio ainda.</p>';
+    return;
+  }
+  $('#historico-sorteios').innerHTML = `
+    <div class="tabela-rolavel">
+      <table>
+        <thead>
+          <tr><th>Quando</th><th>Brinde</th><th>Quem ganhou</th><th>Rodada</th><th class="num">Na roleta</th><th></th></tr>
+        </thead>
+        <tbody>
+          ${sorteios
+            .map((s) => {
+              const foraDaVez = s.participantes.some((p) => p.usuarioId === s.ganhadorId && p.jaGanhou);
+              return `
+            <tr data-id="${esc(s.id)}">
+              <td>${quandoFoi(s.criadoEm)}</td>
+              <td>${esc(s.brinde || '—')}</td>
+              <td><b>${esc(s.ganhadorNome)}</b>${foraDaVez ? ' <span class="selo-volta">fora da vez</span>' : ''}</td>
+              <td>${esc(s.rodadaNome || '—')}</td>
+              <td class="num">${s.participantes.length}</td>
+              <td class="num"><button type="button" class="botao perigo miudo" data-acao="apagar-sorteio">Apagar</button></td>
+            </tr>`;
+            })
+            .join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+/** Enquanto a roda gira, nada que mude a roleta pode ser mexido. */
+function travarSorteio(travado) {
+  sorteio.girando = travado;
+  for (const elemento of [
+    '#botao-girar',
+    '#miolo-roleta',
+    '#brinde',
+    '#rodada-sorteio',
+    '#marcar-todos',
+    '#marcar-quem-falta'
+  ]) {
+    $(elemento).disabled = travado;
+  }
+  for (const caixa of $$('#lista-participantes input')) caixa.disabled = travado;
+  $('#botao-girar').textContent = travado ? 'Girando…' : 'Girar a roleta';
+}
+
+function esconderRevelacao() {
+  $('#revelacao').classList.add('escondido');
+  $('#controles-sorteio').classList.remove('escondido');
+  $('#roleta').classList.remove('venceu');
+  if (!sorteio.girando) $('#miolo-roleta').disabled = false;
+  for (const fatia of $$('#roda .fatia')) fatia.classList.remove('vencedora', 'apagada');
+}
+
+async function girarRoleta() {
+  if (sorteio.girando || !sorteio.dados || !sorteio.dados.rodada) return;
+  const lista = participantesDaRoda();
+  if (!lista.length) return torradeira('Marque pelo menos uma pessoa para participar.', true);
+
+  esconderRevelacao();
+  travarSorteio(true);
+  prepararAudio();
+  const reduzido = movimentoReduzido();
+  const partida = sorteio.rotacao;
+
+  const pedido = api('/api/sorteios', {
+    method: 'POST',
+    corpo: {
+      rodada: sorteio.dados.rodada.id,
+      participantes: lista.map((p) => p.usuarioId),
+      brinde: $('#brinde').value
+    }
+  });
+  // A puxada para trás, antes do arranque, cobre a ida ao servidor: a roda reage
+  // ao clique na hora, e quando ela solta o ganhador já está escolhido.
+  const puxada = reduzido ? Promise.resolve() : moverRoda(partida - 14, 460, suave);
+  const [resultado] = await Promise.allSettled([pedido, puxada]);
+
+  if (resultado.status === 'rejected') {
+    await moverRoda(partida, 380, suave);
+    travarSorteio(false);
+    return torradeira(resultado.reason.message, true);
+  }
+
+  const resposta = resultado.value;
+  const indice = lista.findIndex((p) => p.usuarioId === resposta.ganhador.usuarioId);
+  if (indice < 0) {
+    // Não deveria acontecer: o servidor só sorteia entre quem foi mandado.
+    travarSorteio(false);
+    carregarSorteio(sorteio.rodadaEscolhida);
+    return torradeira('A roleta mudou no meio do caminho. Confira o sorteio anterior na lista.', true);
+  }
+
+  const fatia = 360 / lista.length;
+  // Para num ponto qualquer da fatia, longe das bordas: parar sempre no meio
+  // ficaria mecânico, e parar em cima do pino deixaria dúvida de quem ganhou.
+  const dentro = 0.2 + Math.random() * 0.6;
+  const destino = mod(-(indice + dentro) * fatia, 360);
+  const de = sorteio.rotacao;
+  const voltas = reduzido ? 1 : 6 + Math.floor(Math.random() * 3);
+
+  $('#roleta').classList.add('girando');
+  await moverRoda(
+    de + voltas * 360 + mod(destino - de, 360),
+    reduzido ? 900 : 6200 + Math.random() * 1600,
+    reduzido ? suave : arrancadaEFreio
+  );
+  // Um respiro com a roda parada antes do anúncio: o ponteiro assenta e quem
+  // está olhando já leu o nome na fatia.
+  await esperar(reduzido ? 0 : 320);
+
+  sorteio.rotacao = mod(sorteio.rotacao, 360);
+  aplicarRotacao();
+  travarSorteio(false);
+  revelarGanhador(resposta);
+}
+
+function revelarGanhador({ ganhador, sorteio: registro }) {
+  const roleta = $('#roleta');
+  roleta.classList.remove('girando');
+  roleta.classList.add('venceu');
+
+  for (const fatia of $$('#roda .fatia')) {
+    const venceu = fatia.dataset.usuario === ganhador.usuarioId;
+    fatia.classList.toggle('vencedora', venceu);
+    fatia.classList.toggle('apagada', !venceu);
+    // Por último entre as fatias, para o contorno aceso passar por cima das vizinhas.
+    if (venceu) $('#roda').insertBefore(fatia, $('#roda .divisoes'));
+  }
+
+  tocarFanfarra();
+  const caixa = roleta.getBoundingClientRect();
+  soltarConfete(caixa.left + caixa.width / 2, caixa.top + caixa.height * 0.4);
+
+  // Letra por letra, cada uma com um atraso: o nome "cai" na tela. O título leva
+  // o nome inteiro para o leitor de tela não soletrar.
+  const letras = [...ganhador.nome]
+    .map((letra, i) => `<span style="--i:${i}" aria-hidden="true">${esc(letra)}</span>`)
+    .join('');
+  $('#revelacao').innerHTML = `
+    <p class="rotulo">${registro.brinde ? `Quem leva ${esc(registro.brinde)}` : 'Quem ganhou'}</p>
+    <h3 aria-label="${esc(ganhador.nome)}">${letras}</h3>
+    ${ganhador.jaGanhou ? '<p class="quem">Já tinha ganhado nesta volta — entrou na roleta por escolha sua.</p>' : ''}
+    <button type="button" class="botao" id="proximo-sorteio">Próximo sorteio</button>`;
+  $('#revelacao').classList.remove('escondido');
+  $('#controles-sorteio').classList.add('escondido');
+  // Até "Próximo sorteio", a roda fica mostrando quem ganhou.
+  $('#miolo-roleta').disabled = true;
+
+  sorteio.dados.sorteios.unshift(registro);
+  desenharHistoricoSorteios();
+}
+
+/* ------------------------------------------------------------------ */
 /* Carga inicial                                                       */
 /* ------------------------------------------------------------------ */
 
@@ -2136,6 +2899,78 @@ $('#tabela-pessoas').addEventListener('click', async (evento) => {
 });
 
 $('#botao-trocar-senha').addEventListener('click', trocarMinhaSenha);
+
+desenharMoldura();
+desenharBotaoSom();
+
+$('#botao-girar').addEventListener('click', girarRoleta);
+$('#miolo-roleta').addEventListener('click', girarRoleta);
+$('#brinde').addEventListener('keydown', (evento) => {
+  if (evento.key === 'Enter') girarRoleta();
+});
+
+$('#botao-som').addEventListener('click', () => {
+  sorteio.som = !sorteio.som;
+  try {
+    localStorage.setItem(CHAVE_SOM, sorteio.som ? 'ligado' : 'desligado');
+  } catch {
+    /* sem localStorage a escolha vale só até recarregar */
+  }
+  desenharBotaoSom();
+  // Um tique de amostra: quem ligou o som quer saber se está ouvindo.
+  if (sorteio.som) {
+    prepararAudio();
+    tocarTique();
+  }
+});
+
+$('#rodada-sorteio').addEventListener('change', (evento) => carregarSorteio(evento.target.value));
+
+$('#lista-participantes').addEventListener('change', (evento) => {
+  const caixa = evento.target.closest('input[data-usuario]');
+  if (!caixa || sorteio.girando) return;
+  const id = caixa.dataset.usuario;
+  if (caixa.checked) sorteio.marcados.add(id);
+  else sorteio.marcados.delete(id);
+  esconderRevelacao();
+  desenharParticipantes();
+  desenharRoda();
+  // A lista foi redesenhada: devolve o foco a quem estava no teclado.
+  const mesma = $(`#lista-participantes input[data-usuario="${CSS.escape(id)}"]`);
+  if (mesma) mesma.focus();
+});
+
+for (const [botao, filtro] of [
+  ['#marcar-todos', () => true],
+  ['#marcar-quem-falta', (c) => !c.jaGanhou]
+]) {
+  $(botao).addEventListener('click', () => {
+    if (!sorteio.dados || sorteio.girando) return;
+    sorteio.marcados = new Set(sorteio.dados.candidatos.filter(filtro).map((c) => c.usuarioId));
+    esconderRevelacao();
+    desenharParticipantes();
+    desenharRoda();
+  });
+}
+
+$('#revelacao').addEventListener('click', (evento) => {
+  if (!evento.target.closest('#proximo-sorteio')) return;
+  $('#brinde').value = '';
+  carregarSorteio(sorteio.rodadaEscolhida).then(() => $('#brinde').focus());
+});
+
+$('#historico-sorteios').addEventListener('click', async (evento) => {
+  const botao = evento.target.closest('button[data-acao="apagar-sorteio"]');
+  if (!botao || sorteio.girando) return;
+  if (!confirm('Apagar este sorteio? Ele deixa de contar em quem já ganhou.')) return;
+  try {
+    await api(`/api/sorteios/${botao.closest('tr[data-id]').dataset.id}`, { method: 'DELETE' });
+    torradeira('Sorteio apagado.');
+    carregarSorteio(sorteio.rodadaEscolhida);
+  } catch (falha) {
+    torradeira(falha.message, true);
+  }
+});
 
 iniciar().catch((falha) => {
   document.body.innerHTML = `<p style="padding:40px;font-family:sans-serif">Não deu para falar com o servidor: ${esc(falha.message)}</p>`;

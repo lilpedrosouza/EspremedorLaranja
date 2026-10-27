@@ -83,7 +83,9 @@ externa; o QR em SVG sai do `qrcode` em `servidor.js`.
 **`publico/`** — página única em JavaScript de navegador puro, sem build nem framework.
 Um objeto global `estado`, funções `desenharX()` que reconstroem HTML e `trocarAba()` que
 carrega os dados da aba. As abas são `loja`, `rastreio`, `fechamento`, `catalogo`,
-`pessoas`; as duas do meio só existem para o espremedor (classe `.so-espremedor`).
+`sorteio`, `pessoas`; `fechamento`, `catalogo` e `sorteio` só existem para o espremedor
+(classe `.so-espremedor`). A roleta do sorteio é SVG girado por CSS `transform` num laço
+de `requestAnimationFrame` guiado pelo relógio (não por quadro), com o ponteiro numa mola.
 
 ## Modelo de domínio
 
@@ -129,6 +131,12 @@ carrega os dados da aba. As abas são `loja`, `rastreio`, `fechamento`, `catalog
   por isso a leitura descarta ponto repetido em sequência (`semRepetidosSeguidos`). A janela
   de análise é de 180 dias (`JANELA_PRECOS_DIAS`), que é o que segura o tamanho da consulta —
   a tabela cresce para sempre.
+- **Sorteio de brindes**: entre quem pediu numa rodada (por padrão a última fechada com
+  pedido). **Quem escolhe o ganhador é o servidor** (`crypto.randomInt` em
+  `/api/sorteios`); a roleta só anima até a fatia que veio de lá. A regra da turma — quem
+  ganhou espera todo mundo ganhar uma vez — é calculada em `ganhadoresDaVolta()` contra os
+  candidatos de agora, e é **só aviso**: a rota aceita qualquer um que tenha pedido, e a
+  tela apenas deixa desmarcado por padrão. Apagar um sorteio o tira da conta da volta.
 - **Cápsula avulsa × caixa**: o site vende os dois com o mesmo nome-base. Só o item com
   contagem de cápsulas no nome (`pareceCaixa`) entra `ativo`, senão o fechamento cobraria
   dez vezes menos. `esconderPrecoDeUnidade()` reforça isso a cada sincronização, mas nunca

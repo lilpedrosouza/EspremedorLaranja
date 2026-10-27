@@ -149,6 +149,7 @@
         <button type="button" data-aba="rastreio">Rastreio</button>
         <button type="button" data-aba="fechamento" class="so-espremedor escondido">Fechamento</button>
         <button type="button" data-aba="catalogo" class="so-espremedor escondido">Catálogo</button>
+        <button type="button" data-aba="sorteio" class="so-espremedor escondido">Sorteio</button>
         <button type="button" data-aba="pessoas">Minha conta</button>
       </nav>
       <div class="usuario-topo">
@@ -334,6 +335,67 @@
       <p class="subtitulo">Desmarque “na lista” pra esconder um item da tela do pessoal.</p>
       <input class="busca" id="busca-catalogo" type="search" placeholder="Buscar no catálogo" aria-label="Buscar no catálogo">
       <div id="tabela-catalogo"></div>
+    </section>
+  </main>
+
+  <!-- ---------- sorteio de brindes ---------- -->
+  <main class="pagina escondido" id="aba-sorteio">
+    <div class="faixa-rodada">
+      <div>
+        <h1>Sorteio de brindes</h1>
+        <p>Quem pediu na rodada entra na roleta. Quem já ganhou espera todo mundo ganhar uma vez.</p>
+      </div>
+      <button type="button" class="botao claro miudo" id="botao-som" aria-pressed="true" style="margin-left:auto">Som ligado</button>
+    </div>
+
+    <div class="colunas-sorteio">
+      <section class="bloco palco-roleta" aria-label="Roleta">
+        <div class="roleta" id="roleta">
+          <svg class="roleta-moldura" id="moldura-roleta" viewBox="-200 -200 400 400" aria-hidden="true"></svg>
+          <svg class="roleta-roda" id="roda" viewBox="-200 -200 400 400" aria-hidden="true"></svg>
+          <svg class="roleta-frente" id="frente-roleta" viewBox="-200 -200 400 400" aria-hidden="true"></svg>
+          <button type="button" class="roleta-miolo" id="miolo-roleta" aria-label="Girar a roleta">
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <ellipse cx="20.5" cy="6" rx="4.2" ry="2.3" fill="#3f9e56" transform="rotate(-20 20.5 6)"/>
+              <rect x="15.1" y="4.2" width="1.8" height="4.4" rx=".9" fill="#7a4a22"/>
+              <circle cx="16" cy="18.5" r="11.5" fill="#f5811f"/>
+              <circle cx="11.8" cy="14.2" r="3.4" fill="#ffb066" opacity=".55"/>
+            </svg>
+            <span>girar</span>
+          </button>
+        </div>
+
+        <div class="controles-sorteio" id="controles-sorteio">
+          <div class="campo">
+            <label for="brinde">Brinde</label>
+            <input id="brinde" maxlength="80" placeholder="Ex.: caneca, caixa de cápsulas">
+          </div>
+          <button type="button" class="botao" id="botao-girar">Girar a roleta</button>
+        </div>
+
+        <div class="revelacao escondido" id="revelacao" role="status" aria-live="polite"></div>
+      </section>
+
+      <aside class="bloco" aria-label="Quem participa">
+        <h2>Quem participa</h2>
+        <p class="subtitulo" id="resumo-participantes">Conferindo quem pediu…</p>
+        <div class="campo">
+          <label for="rodada-sorteio">Rodada</label>
+          <select id="rodada-sorteio"></select>
+        </div>
+        <div class="aviso-volta escondido" id="aviso-volta" role="status"></div>
+        <div class="acoes-rapidas">
+          <button type="button" class="botao claro miudo" id="marcar-todos">Todo mundo</button>
+          <button type="button" class="botao claro miudo" id="marcar-quem-falta">Só quem ainda não ganhou</button>
+        </div>
+        <ul class="participantes" id="lista-participantes"></ul>
+      </aside>
+    </div>
+
+    <section class="bloco">
+      <h2>Sorteios anteriores</h2>
+      <p class="subtitulo">Apagar um sorteio tira ele da conta de quem já ganhou.</p>
+      <div id="historico-sorteios"></div>
     </section>
   </main>
 

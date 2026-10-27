@@ -144,6 +144,25 @@ create table if not exists configuracao (
 
 create index if not exists pedidos_por_rodada on pedidos (rodada_id);
 
+-- Sorteio de brindes entre quem pediu numa rodada.
+--
+-- `participantes` é jsonb pelo mesmo motivo dos itens do pedido: é a fotografia
+-- de quem estava na roleta naquela hora, com o nome como estava. O ganhador
+-- fica também em coluna própria porque é por ela que se conta a "volta" — quem
+-- já ganhou espera todo mundo ganhar antes de concorrer de novo.
+create table if not exists sorteios (
+  id            text primary key,
+  rodada_id     text references rodadas(id)  on delete set null,
+  brinde        text        not null default '',
+  participantes jsonb       not null default '[]'::jsonb,
+  ganhador_id   text references usuarios(id) on delete set null,
+  ganhador_nome text        not null,
+  sorteado_por  text,
+  criado_em     timestamptz not null default now()
+);
+
+create index if not exists sorteios_por_data on sorteios (criado_em);
+
 create table if not exists sessoes (
   token      text primary key,
   usuario_id text        not null references usuarios(id) on delete cascade,

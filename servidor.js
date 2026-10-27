@@ -577,6 +577,64 @@ async function pixParaPagar(valor) {
   };
 }
 
+/* ------------------------------------------------------------------ */
+/* Sorteio de brindes                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Quem já ganhou na volta atual do sorteio.
+ *
+ * A combinação da turma: quem ganhou espera todo mundo ganhar uma vez antes de
+ * concorrer de novo. A volta fecha quando todos os candidatos de agora já
+ * ganharam, e aí a conta zera. Por isso o percurso vai do sorteio mais antigo
+ * para o mais novo, e o que sobra no fim é quem ganhou depois da última volta
+ * completa.
+ *
+ * A volta é medida contra os candidatos de agora, e não contra quem concorria em
+ * cada sorteio antigo: a turma muda de uma rodada para outra, e quem entrou agora
+ * e nunca ganhou ainda está na fila. Enquanto essa pessoa não ganhar, a volta
+ * não fecha.
+ *
+ * É só aviso. Quem decide é o espremedor, e a rota de sortear aceita qualquer um.
+ */
+function ganhadoresDaVolta(sorteios, idsCandidatos) {
+  let volta = new Set();
+  for (const sorteio of sorteios) {
+    if (!sorteio.ganhadorId) continue;
+    volta.add(sorteio.ganhadorId);
+    if (idsCandidatos.every((id) => volta.has(id))) volta = new Set();
+  }
+  return volta;
+}
+
+/** Quem pediu na rodada, cada um com a marcação de já ter ganhado na volta. */
+async function candidatosDoSorteio(rodadaId, sorteios) {
+  const pedidos = await banco.pedidosDaRodada(rodadaId);
+  const volta = ganhadoresDaVolta(sorteios, pedidos.map((p) => p.usuarioId));
+  const ultimo = sorteios.length ? sorteios[sorteios.length - 1].ganhadorId : null;
+  return pedidos.map((p) => ({
+    usuarioId: p.usuarioId,
+    nome: p.nome,
+    jaGanhou: volta.has(p.usuarioId),
+    ganhouUltimo: p.usuarioId === ultimo
+  }));
+}
+
+/**
+ * A rodada que a roleta abre sozinha: a última fechada que teve pedido.
+ *
+ * A fechada vem antes da aberta porque é nela que o pedido já virou compra; a
+ * aberta ainda está recebendo gente. Sem nenhuma fechada, vale a aberta.
+ */
+function rodadaPadraoDoSorteio(rodadas, pedidosPorRodada) {
+  return (
+    rodadas.find((r) => !r.aberta && pedidosPorRodada.get(r.id)) ||
+    rodadas.find((r) => r.aberta) ||
+    rodadas[0] ||
+    null
+  );
+}
+
 /** O começo da janela de análise de preços. */
 function inicioDaJanela() {
   return new Date(Date.now() - JANELA_PRECOS_DIAS * 24 * 60 * 60 * 1000);
@@ -1311,6 +1369,76 @@ async function tratarApi(requisicao, resposta, url) {
     return responderJson(resposta, 200, {
       rodada: { id: rodada.id, nome: rodada.nome, observacao: rodada.observacao }
     });
+  }
+
+  /* ---- sorteio de brindes (espremedor) ---- */
+
+  if (rota === '/api/sorteio' && metodo === 'GET') {
+    if (!exigeEspremedor()) return;
+    const [rodadas, pedidosPorRodada, sorteios] = await Promise.all([
+      banco.listarRodadas(),
+      banco.contarPedidosPorRodada(),
+      banco.listarSorteios()
+    ]);
+    const pedida = url.searchParams.get('rodada');
+    const alvo = rodadas.find((r) => r.id === pedida) || rodadaPadraoDoSorteio(rodadas, pedidosPorRodada);
+
+    return responderJson(resposta, 200, {
+      rodadas: rodadas.map((r) => ({
+        id: r.id,
+        nome: r.nome,
+        aberta: r.aberta,
+        pessoas: pedidosPorRodada.get(r.id) || 0
+      })),
+      rodada: alvo ? { id: alvo.id, nome: alvo.nome, aberta: alvo.aberta } : null,
+      candidatos: alvo ? await candidatosDoSorteio(alvo.id, sorteios) : [],
+      // Do mais novo para o mais velho, que é como a tela lista.
+      sorteios: sorteios.slice(-30).reverse()
+    });
+  }
+
+  /**
+   * Sortear.
+   *
+   * Quem escolhe o ganhador é o servidor, e não a roleta da tela: ela só gira até
+   * a fatia que veio daqui. Assim o resultado não depende de quem está com a tela
+   * aberta, e fica gravado antes de a animação começar.
+   */
+  if (rota === '/api/sorteios' && metodo === 'POST') {
+    if (!exigeEspremedor()) return;
+    const corpo = await lerCorpo(requisicao);
+    const rodada = await banco.rodadaPorId(String(corpo.rodada || ''));
+    if (!rodada) return erro(resposta, 404, 'Rodada não encontrada.');
+
+    const candidatos = await candidatosDoSorteio(rodada.id, await banco.listarSorteios());
+    const marcados = new Set((Array.isArray(corpo.participantes) ? corpo.participantes : []).map(String));
+    // Na ordem dos candidatos, e não na que chegou: a roleta é desenhada nela.
+    // Quem não pediu nessa rodada fica de fora mesmo que venha na lista.
+    const participantes = candidatos.filter((c) => marcados.has(c.usuarioId));
+    if (!participantes.length) return erro(resposta, 400, 'Marque pelo menos uma pessoa para participar.');
+
+    const ganhador = participantes[crypto.randomInt(participantes.length)];
+    const sorteio = await banco.gravarSorteio({
+      id: novoId(),
+      rodadaId: rodada.id,
+      brinde: String(corpo.brinde || '').trim().slice(0, 80),
+      participantes: participantes.map((p) => ({ usuarioId: p.usuarioId, nome: p.nome, jaGanhou: p.jaGanhou })),
+      ganhadorId: ganhador.usuarioId,
+      ganhadorNome: ganhador.nome,
+      sorteadoPor: usuario.nome
+    });
+    return responderJson(resposta, 201, {
+      sorteio: { ...sorteio, rodadaNome: rodada.nome },
+      ganhador: { usuarioId: ganhador.usuarioId, nome: ganhador.nome, jaGanhou: ganhador.jaGanhou }
+    });
+  }
+
+  /** Apagar um sorteio — o que saiu errado deixa de contar na volta. */
+  const casaSorteio = rota.match(/^\/api\/sorteios\/([\w-]+)$/);
+  if (casaSorteio && metodo === 'DELETE') {
+    if (!exigeEspremedor()) return;
+    if (!(await banco.removerSorteio(casaSorteio[1]))) return erro(resposta, 404, 'Sorteio não encontrado.');
+    return responderJson(resposta, 200, { removido: casaSorteio[1] });
   }
 
   /* ---- pessoas ---- */
