@@ -475,25 +475,42 @@ function trocarAba(aba) {
 /* Sabores                                                             */
 /* ------------------------------------------------------------------ */
 
+/** A ficha de filtro dos mais pedidos. Não é categoria do site, é o ranking que vem do servidor. */
+const FICHA_MAIS_PEDIDOS = '★ Mais pedidos';
+
 function produtosVisiveis() {
   const busca = estado.busca.trim().toLowerCase();
+  const soMaisPedidos = estado.categoria === FICHA_MAIS_PEDIDOS;
   return estado.produtos
     .filter((p) => p.ativo !== false)
-    .filter((p) => estado.categoria === 'Todos' || p.categoria === estado.categoria)
+    .filter((p) => (soMaisPedidos ? p.popular : estado.categoria === 'Todos' || p.categoria === estado.categoria))
     .filter((p) => !busca || `${p.nome} ${p.descricao || ''}`.toLowerCase().includes(busca))
-    .sort((a, b) => (a.disponivel === false ? 1 : 0) - (b.disponivel === false ? 1 : 0));
+    .sort(
+      (a, b) =>
+        (a.disponivel === false ? 1 : 0) - (b.disponivel === false ? 1 : 0) ||
+        (soMaisPedidos ? a.popular.posicao - b.popular.posicao : 0)
+    );
 }
 
 function desenharFichas() {
-  const categorias = [...new Set(estado.produtos.filter((p) => p.ativo !== false).map((p) => p.categoria))].sort(
-    (a, b) => a.localeCompare(b, 'pt-BR')
-  );
-  $('#fichas-categorias').innerHTML = ['Todos', ...categorias]
+  const ativos = estado.produtos.filter((p) => p.ativo !== false);
+  const categorias = [...new Set(ativos.map((p) => p.categoria))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const temMaisPedidos = ativos.some((p) => p.popular);
+  // Sem ninguém no ranking (catálogo novo, sem pedidos), a ficha some e o filtro volta pra Todos.
+  if (estado.categoria === FICHA_MAIS_PEDIDOS && !temMaisPedidos) estado.categoria = 'Todos';
+  $('#fichas-categorias').innerHTML = ['Todos', ...(temMaisPedidos ? [FICHA_MAIS_PEDIDOS] : []), ...categorias]
     .map(
       (categoria) =>
-        `<button type="button" data-categoria="${esc(categoria)}" aria-pressed="${categoria === estado.categoria}">${esc(categoria)}</button>`
+        `<button type="button" data-categoria="${esc(categoria)}" aria-pressed="${categoria === estado.categoria}" ${categoria === FICHA_MAIS_PEDIDOS ? 'class="ficha-mais-pedidos"' : ''}>${esc(categoria)}</button>`
     )
     .join('');
+}
+
+/** A tag de "mais pedido" no cartão, com a posição e a conta no título. */
+function seloMaisPedido(popular) {
+  if (!popular) return '';
+  return `<span class="selo-mais-pedido" title="${popular.caixas} caixa${popular.caixas === 1 ? '' : 's'} pedida${popular.caixas === 1 ? '' : 's'} por ${popular.pessoas} pessoas, somando todas as rodadas">
+    <span aria-hidden="true">★</span> ${popular.posicao}º mais pedido</span>`;
 }
 
 /**
@@ -524,9 +541,10 @@ function desenharGrade() {
       const indisponivel = produto.disponivel === false;
       const marca = produto.intensidade || '';
       return `
-        <article class="cartao ${quantidade ? 'escolhido' : ''} ${indisponivel ? 'sem-estoque' : ''}" data-id="${esc(produto.id)}">
+        <article class="cartao ${quantidade ? 'escolhido' : ''} ${indisponivel ? 'sem-estoque' : ''} ${produto.popular ? 'mais-pedido' : ''}" data-id="${esc(produto.id)}">
           <span class="disco" style="--cor:${corDe(produto.categoria)}" aria-hidden="true">${esc(marca)}${produto.imagem ? `<img src="${esc(produto.imagem)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</span>
           <div>
+            ${seloMaisPedido(produto.popular)}
             <h3>${
               produto.url
                 ? `<a class="link-produto" href="${esc(produto.url)}" target="_blank" rel="noopener noreferrer">${esc(produto.nome)}<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3h7v7M13 3 6.5 9.5M11 9.5V13H3V5h3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="so-leitor">abre o sabor no site da Nescafé, em outra aba</span></a>`
@@ -1640,7 +1658,8 @@ async function alterarProduto(id, mudanca) {
   try {
     const atualizado = await api(`/api/produtos/${id}`, { method: 'PATCH', corpo: mudanca });
     const indice = estado.produtos.findIndex((p) => p.id === id);
-    if (indice > -1) estado.produtos[indice] = atualizado;
+    // O PATCH devolve o produto puro: a posição no ranking vem de fora e fica a que já estava.
+    if (indice > -1) estado.produtos[indice] = { ...atualizado, popular: estado.produtos[indice].popular };
     desenharLoja();
     if (estado.aba === 'catalogo') desenharCatalogo();
     torradeira('Catálogo salvo.');

@@ -144,6 +144,11 @@ de `requestAnimationFrame` guiado pelo relógio (não por quadro), com o ponteir
   A lista da roleta é quem pediu mais os ajustes de `sorteio_ajustes` (por rodada:
   `incluido` = tem conta e não pediu, `removido` = pediu e fica de fora). O nome na fatia
   é `usuarios.apelido`, global e **separado do nome da conta**, porque o nome é o login.
+- **Mais pedidos**: `popularidadeDosProdutos()` soma caixas e pessoas de todas as rodadas
+  abrindo o `jsonb` dos itens no banco; `rankingDosMaisPedidos()` pega os `MAIS_PEDIDOS`
+  primeiros entre os sabores ativos, com pelo menos `MINIMO_DE_PESSOAS_POPULAR` pessoas, e
+  `/api/produtos` devolve a posição em `popular`. Na loja vira a tag do cartão e a ficha
+  "★ Mais pedidos", que some enquanto ninguém entra no ranking.
 - **Renomear a conta muda o login** (`chave` sai do nome). `renomearUsuario` também
   atualiza o `nome` do pedido da rodada aberta; os de rodadas fechadas ficam como fotografia.
 - **Cápsula avulsa × caixa**: o site vende os dois com o mesmo nome-base. Só o item com

@@ -686,16 +686,42 @@ function inicioDaJanela() {
   return new Date(Date.now() - JANELA_PRECOS_DIAS * 24 * 60 * 60 * 1000);
 }
 
-/** Cada produto com o veredito do preço dele junto: 'abaixo', 'acima', 'media'. */
+/** Quantos sabores levam o selo de "mais pedido". */
+const MAIS_PEDIDOS = 6;
+/** Um sabor que só uma pessoa pede não é preferência da turma, é gosto dela. */
+const MINIMO_DE_PESSOAS_POPULAR = 2;
+
+/**
+ * O ranking dos mais pedidos, só entre os sabores que aparecem na loja — senão
+ * um sabor escondido ocuparia uma posição e o espremedor e o pessoal veriam
+ * números diferentes.
+ */
+function rankingDosMaisPedidos(lista, popularidade) {
+  const ranking = lista
+    .filter((produto) => produto.ativo !== false)
+    .map((produto) => ({ id: produto.id, ...(popularidade.get(produto.id) || { caixas: 0, pessoas: 0 }) }))
+    .filter((linha) => linha.pessoas >= MINIMO_DE_PESSOAS_POPULAR)
+    .sort((a, b) => b.caixas - a.caixas || b.pessoas - a.pessoas)
+    .slice(0, MAIS_PEDIDOS);
+  return new Map(ranking.map((linha, i) => [linha.id, { posicao: i + 1, caixas: linha.caixas, pessoas: linha.pessoas }]));
+}
+
+/**
+ * Cada produto com o veredito do preço dele junto ('abaixo', 'acima', 'media')
+ * e, entre os mais pedidos, a posição no ranking em `popular`.
+ */
 async function produtosComAnalise(opcoes) {
-  const [lista, historico] = await Promise.all([
+  const [lista, historico, popularidade] = await Promise.all([
     banco.listarProdutos(opcoes),
-    banco.historicoDeTodos(inicioDaJanela())
+    banco.historicoDeTodos(inicioDaJanela()),
+    banco.popularidadeDosProdutos()
   ]);
   const agora = Date.now();
+  const ranking = rankingDosMaisPedidos(lista, popularidade);
   return lista.map((produto) => ({
     ...produto,
-    analise: precos.resumo(historico.get(produto.id) || [], produto.preco, agora)
+    analise: precos.resumo(historico.get(produto.id) || [], produto.preco, agora),
+    popular: ranking.get(produto.id) || null
   }));
 }
 
