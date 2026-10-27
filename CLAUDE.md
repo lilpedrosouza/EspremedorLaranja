@@ -137,6 +137,11 @@ de `requestAnimationFrame` guiado pelo relógio (não por quadro), com o ponteir
   ganhou espera todo mundo ganhar uma vez — é calculada em `ganhadoresDaVolta()` contra os
   candidatos de agora, e é **só aviso**: a rota aceita qualquer um que tenha pedido, e a
   tela apenas deixa desmarcado por padrão. Apagar um sorteio o tira da conta da volta.
+  A lista da roleta é quem pediu mais os ajustes de `sorteio_ajustes` (por rodada:
+  `incluido` = tem conta e não pediu, `removido` = pediu e fica de fora). O nome na fatia
+  é `usuarios.apelido`, global e **separado do nome da conta**, porque o nome é o login.
+- **Renomear a conta muda o login** (`chave` sai do nome). `renomearUsuario` também
+  atualiza o `nome` do pedido da rodada aberta; os de rodadas fechadas ficam como fotografia.
 - **Cápsula avulsa × caixa**: o site vende os dois com o mesmo nome-base. Só o item com
   contagem de cápsulas no nome (`pareceCaixa`) entra `ativo`, senão o fechamento cobraria
   dez vezes menos. `esconderPrecoDeUnidade()` reforça isso a cada sincronização, mas nunca

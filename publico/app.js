@@ -1582,7 +1582,11 @@ async function carregarPessoas() {
             .map(
               (pessoa) => `
             <tr data-id="${esc(pessoa.id)}">
-              <td>${esc(pessoa.nome)}</td>
+              <td>
+                <input data-acao="nome" autocomplete="off" spellcheck="false" aria-label="Nome de ${esc(pessoa.nome)}"
+                       value="${esc(pessoa.nome)}" data-valor="${esc(pessoa.nome)}"
+                       style="width:100%;min-width:140px;padding:5px 8px;border:1px solid var(--linha);border-radius:6px;background:var(--papel);font-weight:600">
+              </td>
               <td>
                 <select data-acao="papel" style="padding:5px 8px;border:1px solid var(--linha);border-radius:6px">
                   <option value="usuario" ${pessoa.papel === 'usuario' ? 'selected' : ''}>usuário</option>
@@ -2180,12 +2184,13 @@ function soltarConfete(x, y) {
 
 /* ---- tela ---- */
 
-async function carregarSorteio(rodadaId) {
+async function carregarSorteio(rodadaId, incluir) {
   // Recarregar no meio do giro redesenharia a roda debaixo da animação.
   if (sorteio.girando) return;
   try {
     const dados = await api(`/api/sorteio${rodadaId ? `?rodada=${encodeURIComponent(rodadaId)}` : ''}`);
     acomodarMarcados(sorteio.dados, dados);
+    if (incluir) sorteio.marcados.add(incluir);
     sorteio.dados = dados;
     sorteio.rodadaEscolhida = dados.rodada ? dados.rodada.id : null;
     esconderRevelacao();
@@ -2243,9 +2248,11 @@ function desenharParticipantes() {
   const lista = participantesDaRoda();
   const posicao = new Map(lista.map((p, i) => [p.usuarioId, i]));
 
+  desenharQuemDaParaIncluir();
+
   if (!candidatos.length) {
-    $('#resumo-participantes').textContent = 'Ninguém pediu nessa rodada.';
-    $('#lista-participantes').innerHTML = '<li class="vazio">Escolha outra rodada acima.</li>';
+    $('#resumo-participantes').textContent = 'Ninguém na roleta dessa rodada.';
+    $('#lista-participantes').innerHTML = '<li class="vazio">Adicione alguém abaixo ou escolha outra rodada.</li>';
     $('#aviso-volta').classList.add('escondido');
     return;
   }
@@ -2255,21 +2262,80 @@ function desenharParticipantes() {
     .map((c) => {
       const indice = posicao.get(c.usuarioId);
       const dentro = indice !== undefined;
-      const selo = c.jaGanhou
-        ? `<span class="selo-volta">${c.ganhouUltimo ? 'ganhou o último' : 'já ganhou'}</span>`
-        : '';
+      const selos = [
+        c.jaGanhou ? `<span class="selo-volta">${c.ganhouUltimo ? 'ganhou o último' : 'já ganhou'}</span>` : '',
+        c.pediu ? '' : '<span class="selo-extra" title="Não pediu nesta rodada; foi adicionado à mão">sem pedido</span>'
+      ].join('');
+      // O nome da conta aparece ao passar o mouse quando a roleta usa outro.
+      const dica = c.nome !== c.nomeDaConta ? ` title="Conta: ${esc(c.nomeDaConta)}"` : '';
+      const travado = sorteio.girando ? 'disabled' : '';
       return `
-      <li class="participante ${dentro ? '' : 'fora'}">
+      <li class="participante ${dentro ? '' : 'fora'}" data-usuario="${esc(c.usuarioId)}">
         <label>
-          <input type="checkbox" data-usuario="${esc(c.usuarioId)}" ${dentro ? 'checked' : ''} ${sorteio.girando ? 'disabled' : ''}>
+          <input type="checkbox" data-usuario="${esc(c.usuarioId)}" ${dentro ? 'checked' : ''} ${travado}>
           <span class="cor-fatia" ${dentro ? `style="--cor:${corDaFatia(indice, lista.length).fundo}"` : ''}></span>
-          <span class="nome">${esc(c.nome)}</span>
-          ${selo}
+          <span class="nome"${dica}>${esc(c.nome)}</span>
+          ${selos}
         </label>
+        <button type="button" class="icone-acao" data-acao="renomear" ${travado}
+                aria-label="Mudar o nome de ${esc(c.nome)} na roleta" title="Mudar o nome na roleta">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M13.6 3.4l3 3L7.4 15.6 3.6 16.4l.8-3.8 9.2-9.2Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" class="icone-acao perigo" data-acao="remover" ${travado}
+                aria-label="Tirar ${esc(c.nome)} da roleta" title="Tirar da roleta">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
       </li>`;
     })
     .join('');
   desenharAvisoDaVolta(candidatos, lista);
+}
+
+/**
+ * O seletor de quem dá para pôr na roleta: quem tem conta e não está nela.
+ * Quem pediu e foi tirado também aparece aqui — é por onde se desfaz a remoção.
+ */
+function desenharQuemDaParaIncluir() {
+  const disponiveis = sorteio.dados ? sorteio.dados.disponiveis || [] : [];
+  $('#adicionar-participante').classList.toggle('escondido', !sorteio.dados || !sorteio.dados.rodada);
+  $('#pessoa-para-incluir').innerHTML = disponiveis.length
+    ? `<option value="">Adicionar alguém…</option>${disponiveis
+        .map((p) => `<option value="${esc(p.usuarioId)}">${esc(p.nome)}${p.pediu ? ' (pediu, foi tirado)' : ''}</option>`)
+        .join('')}`
+    : '<option value="">Todo mundo com acesso já está na roleta</option>';
+  $('#pessoa-para-incluir').disabled = !disponiveis.length || sorteio.girando;
+  $('#botao-incluir-pessoa').disabled = !disponiveis.length || sorteio.girando;
+}
+
+/** Põe ou tira alguém da roleta da rodada e recarrega a lista. */
+async function ajustarRoleta(usuarioId, acao) {
+  try {
+    await api('/api/sorteio/participantes', {
+      method: 'POST',
+      corpo: { rodada: sorteio.rodadaEscolhida, usuarioId, acao }
+    });
+    // Quem foi posto à mão entra marcado, mesmo que já tenha ganhado: foi
+    // escolha explícita do espremedor.
+    await carregarSorteio(sorteio.rodadaEscolhida, acao === 'incluir' ? usuarioId : null);
+  } catch (falha) {
+    torradeira(falha.message, true);
+  }
+}
+
+async function renomearNaRoleta(usuarioId) {
+  const pessoa = sorteio.dados.candidatos.find((c) => c.usuarioId === usuarioId);
+  if (!pessoa) return;
+  const nome = prompt(
+    `Nome de ${pessoa.nomeDaConta} na roleta (deixe vazio para usar o nome da conta).\nO login da pessoa não muda.`,
+    pessoa.nome
+  );
+  if (nome === null) return;
+  try {
+    await api('/api/sorteio/nome', { method: 'PUT', corpo: { usuarioId, nome } });
+    await carregarSorteio(sorteio.rodadaEscolhida);
+  } catch (falha) {
+    torradeira(falha.message, true);
+  }
 }
 
 /**
@@ -2340,7 +2406,9 @@ function travarSorteio(travado) {
   ]) {
     $(elemento).disabled = travado;
   }
-  for (const caixa of $$('#lista-participantes input')) caixa.disabled = travado;
+  for (const controle of $$('#lista-participantes input, #lista-participantes button')) controle.disabled = travado;
+  // O seletor de adicionar destrava só se houver alguém para pôr.
+  desenharQuemDaParaIncluir();
   $('#botao-girar').textContent = travado ? 'Girando…' : 'Girar a roleta';
 }
 
@@ -2839,7 +2907,34 @@ $('#tabela-catalogo').addEventListener('click', async (evento) => {
 $('#tabela-pessoas').addEventListener('change', async (evento) => {
   const linha = evento.target.closest('tr[data-id]');
   const acao = evento.target.dataset.acao;
-  if (!linha || (acao !== 'papel' && acao !== 'email')) return;
+  if (!linha || (acao !== 'papel' && acao !== 'email' && acao !== 'nome')) return;
+
+  // O nome é o login: antes de trocar, a tela pergunta, porque a pessoa vai
+  // precisar entrar com o nome novo e talvez não saiba disso.
+  if (acao === 'nome') {
+    const campo = evento.target;
+    const nome = campo.value.trim().replace(/\s+/g, ' ');
+    const antigo = campo.dataset.valor || '';
+    if (nome === antigo) return;
+    if (!confirm(`Trocar "${antigo}" por "${nome}"? A pessoa passa a entrar com o nome novo.`)) {
+      campo.value = antigo;
+      return;
+    }
+    try {
+      const dados = await api(`/api/usuarios/${linha.dataset.id}`, { method: 'PATCH', corpo: { nome } });
+      campo.value = dados.usuario.nome;
+      campo.dataset.valor = dados.usuario.nome;
+      if (linha.dataset.id === estado.usuario.id) {
+        estado.usuario.nome = dados.usuario.nome;
+        $('#nome-usuario').textContent = dados.usuario.nome;
+      }
+      torradeira(`Nome trocado. Agora entra como "${dados.usuario.nome}".`);
+    } catch (falha) {
+      torradeira(falha.message, true);
+      campo.value = antigo;
+    }
+    return;
+  }
 
   // O e-mail é o destino do link de "esqueci minha senha" — por isso o
   // espremedor consegue arrumar o de quem digitou torto ou trocou de endereço.
@@ -2900,6 +2995,21 @@ $('#tabela-pessoas').addEventListener('click', async (evento) => {
 
 $('#botao-trocar-senha').addEventListener('click', trocarMinhaSenha);
 
+$('#botao-criar-pessoa').addEventListener('click', async () => {
+  const nome = $('#nova-pessoa-nome').value.trim();
+  const senha = $('#nova-pessoa-senha').value;
+  const endereco = $('#nova-pessoa-email').value.trim();
+  if (!nome || !senha) return torradeira('Preencha o nome e a senha inicial.', true);
+  try {
+    const dados = await api('/api/usuarios', { method: 'POST', corpo: { nome, senha, email: endereco } });
+    for (const campo of ['#nova-pessoa-nome', '#nova-pessoa-senha', '#nova-pessoa-email']) $(campo).value = '';
+    torradeira(`Acesso criado. Passe para ${dados.usuario.nome} o nome e a senha.`);
+    carregarPessoas();
+  } catch (falha) {
+    torradeira(falha.message, true);
+  }
+});
+
 desenharMoldura();
 desenharBotaoSom();
 
@@ -2938,6 +3048,21 @@ $('#lista-participantes').addEventListener('change', (evento) => {
   // A lista foi redesenhada: devolve o foco a quem estava no teclado.
   const mesma = $(`#lista-participantes input[data-usuario="${CSS.escape(id)}"]`);
   if (mesma) mesma.focus();
+});
+
+$('#lista-participantes').addEventListener('click', (evento) => {
+  const botao = evento.target.closest('button[data-acao]');
+  if (!botao || sorteio.girando) return;
+  const id = botao.closest('li[data-usuario]').dataset.usuario;
+  if (botao.dataset.acao === 'renomear') renomearNaRoleta(id);
+  // Sem confirmação: tirar é fácil de desfazer pelo "Adicionar alguém".
+  if (botao.dataset.acao === 'remover') ajustarRoleta(id, 'remover');
+});
+
+$('#botao-incluir-pessoa').addEventListener('click', () => {
+  const id = $('#pessoa-para-incluir').value;
+  if (!id) return torradeira('Escolha quem vai entrar na roleta.', true);
+  ajustarRoleta(id, 'incluir');
 });
 
 for (const [botao, filtro] of [

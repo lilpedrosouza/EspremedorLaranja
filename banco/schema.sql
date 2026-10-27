@@ -36,6 +36,12 @@ alter table usuarios add column if not exists email text;
 create unique index if not exists usuarios_email_unico
   on usuarios (lower(email)) where email is not null;
 
+-- O nome que aparece na roleta do sorteio, quando o espremedor quer outro
+-- (um apelido, um nome mais curto que caiba na fatia). Nulo = o nome da conta.
+-- Separado do `nome` de propósito: o nome da conta é o login, e mudar como a
+-- pessoa aparece na roleta não pode mudar como ela entra.
+alter table usuarios add column if not exists apelido text;
+
 -- Links de redefinição de senha enviados por e-mail.
 --
 -- O `token` guarda o SHA-256 do que viaja no link, nunca o valor em si: quem
@@ -162,6 +168,17 @@ create table if not exists sorteios (
 );
 
 create index if not exists sorteios_por_data on sorteios (criado_em);
+
+-- Quem o espremedor tirou ou pôs na roleta de uma rodada, além de quem pediu.
+-- 'incluido' = tem conta mas não pediu; 'removido' = pediu mas fica de fora.
+-- Sem linha, vale o pedido. Gravado no banco, e não só na tela, para o ajuste
+-- sobreviver a recarregar a página ou abrir em outro aparelho.
+create table if not exists sorteio_ajustes (
+  rodada_id  text not null references rodadas(id)  on delete cascade,
+  usuario_id text not null references usuarios(id) on delete cascade,
+  situacao   text not null check (situacao in ('incluido', 'removido')),
+  primary key (rodada_id, usuario_id)
+);
 
 create table if not exists sessoes (
   token      text primary key,

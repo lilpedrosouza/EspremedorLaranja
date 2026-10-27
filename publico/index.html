@@ -389,6 +389,11 @@
           <button type="button" class="botao claro miudo" id="marcar-quem-falta">Só quem ainda não ganhou</button>
         </div>
         <ul class="participantes" id="lista-participantes"></ul>
+        <div class="adicionar-participante" id="adicionar-participante">
+          <label for="pessoa-para-incluir" class="so-leitor">Pessoa para pôr na roleta</label>
+          <select id="pessoa-para-incluir"></select>
+          <button type="button" class="botao claro miudo" id="botao-incluir-pessoa">Adicionar</button>
+        </div>
       </aside>
     </div>
 
@@ -409,8 +414,26 @@
     </div>
     <section class="bloco escondido" id="bloco-pessoas">
       <h2>Quem tem acesso</h2>
-      <p class="subtitulo">O perfil de espremedor vê o fechamento e cuida do catálogo. O e-mail é para onde vai o link de "esqueci minha senha" — dá para corrigir o de qualquer pessoa aqui.</p>
+      <p class="subtitulo">O perfil de espremedor vê o fechamento e cuida do catálogo. O e-mail é para onde vai o link de "esqueci minha senha" — dá para corrigir o de qualquer pessoa aqui. O nome é o login: trocar o nome muda como a pessoa entra.</p>
       <div id="tabela-pessoas"></div>
+
+      <h3 class="titulo-secao">Criar acesso para alguém</h3>
+      <p class="subtitulo">Entra como usuário. O e-mail é opcional: a pessoa pode cadastrar o dela depois, em Minha conta.</p>
+      <div class="linha-campos">
+        <div class="campo">
+          <label for="nova-pessoa-nome">Nome</label>
+          <input id="nova-pessoa-nome" autocomplete="off" placeholder="É com ele que a pessoa entra">
+        </div>
+        <div class="campo">
+          <label for="nova-pessoa-email">E-mail (opcional)</label>
+          <input id="nova-pessoa-email" type="email" autocomplete="off" inputmode="email" placeholder="pessoa@exemplo.com">
+        </div>
+        <div class="campo">
+          <label for="nova-pessoa-senha">Senha inicial</label>
+          <input id="nova-pessoa-senha" type="text" autocomplete="off" spellcheck="false" placeholder="Mínimo de 4 caracteres">
+        </div>
+        <button type="button" class="botao claro" id="botao-criar-pessoa">Criar acesso</button>
+      </div>
     </section>
     <section class="bloco">
       <h2>Minha senha</h2>

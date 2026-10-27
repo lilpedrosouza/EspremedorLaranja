@@ -607,17 +607,62 @@ function ganhadoresDaVolta(sorteios, idsCandidatos) {
   return volta;
 }
 
-/** Quem pediu na rodada, cada um com a marcação de já ter ganhado na volta. */
+/**
+ * Quem está na roleta da rodada, e quem dá para pôr nela.
+ *
+ * A base é quem pediu; por cima vêm os ajustes do espremedor — gente com conta
+ * que não pediu, e gente que pediu mas fica de fora. Cada candidato sai com a
+ * marcação de já ter ganhado na volta, contada sobre essa lista ajustada.
+ *
+ * O nome na fatia é o apelido de roleta, senão o nome atual da conta. O nome
+ * guardado no pedido só serve de reserva: ele é a fotografia da hora do pedido
+ * e não acompanha uma conta renomeada.
+ */
 async function candidatosDoSorteio(rodadaId, sorteios) {
-  const pedidos = await banco.pedidosDaRodada(rodadaId);
-  const volta = ganhadoresDaVolta(sorteios, pedidos.map((p) => p.usuarioId));
+  const [pedidos, usuarios, ajustes] = await Promise.all([
+    banco.pedidosDaRodada(rodadaId),
+    banco.listarUsuarios(),
+    banco.ajustesDoSorteio(rodadaId)
+  ]);
+  const porId = new Map(usuarios.map((u) => [u.id, u]));
+  const pediram = new Map(pedidos.map((p) => [p.usuarioId, p]));
+
+  const ids = [
+    ...pedidos.filter((p) => ajustes.get(p.usuarioId) !== 'removido').map((p) => p.usuarioId),
+    ...[...ajustes]
+      .filter(([id, situacao]) => situacao === 'incluido' && !pediram.has(id) && porId.has(id))
+      .map(([id]) => id)
+  ];
+
+  const volta = ganhadoresDaVolta(sorteios, ids);
   const ultimo = sorteios.length ? sorteios[sorteios.length - 1].ganhadorId : null;
-  return pedidos.map((p) => ({
-    usuarioId: p.usuarioId,
-    nome: p.nome,
-    jaGanhou: volta.has(p.usuarioId),
-    ganhouUltimo: p.usuarioId === ultimo
-  }));
+  const candidatos = ids
+    .map((id) => {
+      const conta = porId.get(id);
+      const nomeDaConta = conta ? conta.nome : pediram.get(id).nome;
+      return {
+        usuarioId: id,
+        nome: (conta && conta.apelido) || nomeDaConta,
+        nomeDaConta,
+        pediu: pediram.has(id),
+        jaGanhou: volta.has(id),
+        ganhouUltimo: id === ultimo
+      };
+    })
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+  const naRoleta = new Set(ids);
+  const disponiveis = usuarios
+    .filter((u) => !naRoleta.has(u.id))
+    .map((u) => ({ usuarioId: u.id, nome: u.apelido || u.nome, pediu: pediram.has(u.id) }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+  return { candidatos, disponiveis };
+}
+
+/** Nome de pessoa como ele é guardado: sem espaço sobrando nas pontas nem no meio. */
+function limparNome(bruto) {
+  return String(bruto || '').trim().replace(/\s+/g, ' ');
 }
 
 /**
@@ -1382,6 +1427,9 @@ async function tratarApi(requisicao, resposta, url) {
     ]);
     const pedida = url.searchParams.get('rodada');
     const alvo = rodadas.find((r) => r.id === pedida) || rodadaPadraoDoSorteio(rodadas, pedidosPorRodada);
+    const { candidatos, disponiveis } = alvo
+      ? await candidatosDoSorteio(alvo.id, sorteios)
+      : { candidatos: [], disponiveis: [] };
 
     return responderJson(resposta, 200, {
       rodadas: rodadas.map((r) => ({
@@ -1391,10 +1439,47 @@ async function tratarApi(requisicao, resposta, url) {
         pessoas: pedidosPorRodada.get(r.id) || 0
       })),
       rodada: alvo ? { id: alvo.id, nome: alvo.nome, aberta: alvo.aberta } : null,
-      candidatos: alvo ? await candidatosDoSorteio(alvo.id, sorteios) : [],
+      candidatos,
+      disponiveis,
       // Do mais novo para o mais velho, que é como a tela lista.
       sorteios: sorteios.slice(-30).reverse()
     });
+  }
+
+  /**
+   * Pôr ou tirar alguém da roleta de uma rodada.
+   *
+   * O ajuste guardado é sempre a diferença em relação ao pedido: pôr de volta
+   * quem pediu, ou tirar quem tinha sido posto, apaga o ajuste em vez de gravar
+   * um novo. Assim a tabela não acumula ajustes que se anulam.
+   */
+  if (rota === '/api/sorteio/participantes' && metodo === 'POST') {
+    if (!exigeEspremedor()) return;
+    const corpo = await lerCorpo(requisicao);
+    const rodada = await banco.rodadaPorId(String(corpo.rodada || ''));
+    if (!rodada) return erro(resposta, 404, 'Rodada não encontrada.');
+    const pessoa = await banco.usuarioPorId(String(corpo.usuarioId || ''));
+    if (!pessoa) return erro(resposta, 404, 'Pessoa não encontrada.');
+
+    const pediu = Boolean(await banco.pedidoDe(rodada.id, pessoa.id));
+    if (corpo.acao === 'incluir') {
+      await banco.gravarAjusteDoSorteio(rodada.id, pessoa.id, pediu ? null : 'incluido');
+    } else if (corpo.acao === 'remover') {
+      await banco.gravarAjusteDoSorteio(rodada.id, pessoa.id, pediu ? 'removido' : null);
+    } else {
+      return erro(resposta, 400, 'Diga se é para incluir ou remover.');
+    }
+    return responderJson(resposta, 200, { ok: true });
+  }
+
+  /** O nome que aparece na roleta. Vazio volta ao nome da conta; o login não muda. */
+  if (rota === '/api/sorteio/nome' && metodo === 'PUT') {
+    if (!exigeEspremedor()) return;
+    const corpo = await lerCorpo(requisicao);
+    const nome = limparNome(corpo.nome).slice(0, 40);
+    const pessoa = await banco.gravarApelido(String(corpo.usuarioId || ''), nome || null);
+    if (!pessoa) return erro(resposta, 404, 'Pessoa não encontrada.');
+    return responderJson(resposta, 200, { usuarioId: pessoa.id, nome: pessoa.apelido || pessoa.nome });
   }
 
   /**
@@ -1410,10 +1495,10 @@ async function tratarApi(requisicao, resposta, url) {
     const rodada = await banco.rodadaPorId(String(corpo.rodada || ''));
     if (!rodada) return erro(resposta, 404, 'Rodada não encontrada.');
 
-    const candidatos = await candidatosDoSorteio(rodada.id, await banco.listarSorteios());
+    const { candidatos } = await candidatosDoSorteio(rodada.id, await banco.listarSorteios());
     const marcados = new Set((Array.isArray(corpo.participantes) ? corpo.participantes : []).map(String));
     // Na ordem dos candidatos, e não na que chegou: a roleta é desenhada nela.
-    // Quem não pediu nessa rodada fica de fora mesmo que venha na lista.
+    // Quem não está na roleta da rodada fica de fora mesmo que venha na lista.
     const participantes = candidatos.filter((c) => marcados.has(c.usuarioId));
     if (!participantes.length) return erro(resposta, 400, 'Marque pelo menos uma pessoa para participar.');
 
@@ -1457,6 +1542,45 @@ async function tratarApi(requisicao, resposta, url) {
     });
   }
 
+  /**
+   * O espremedor criando o acesso de outra pessoa.
+   *
+   * Diferente do cadastro aberto, aqui o e-mail é opcional: quem cria é o
+   * espremedor, que muitas vezes não sabe o e-mail do colega — a pessoa
+   * cadastra o dela depois, em Minha conta. Entra sempre como usuário comum.
+   */
+  if (rota === '/api/usuarios' && metodo === 'POST') {
+    if (!exigeEspremedor()) return;
+    const corpo = await lerCorpo(requisicao);
+    const nome = limparNome(corpo.nome);
+    const senha = String(corpo.senha || '');
+    const endereco = email.normalizarEmail(corpo.email);
+    if (nome.length < 2) return erro(resposta, 400, 'Escreva o nome com pelo menos 2 letras.');
+    if (senha.length < 4) return erro(resposta, 400, 'A senha precisa de pelo menos 4 caracteres.');
+    if (endereco && !email.pareceEmail(endereco)) {
+      return erro(resposta, 400, 'Esse e-mail não parece certo. Confira o que você digitou.');
+    }
+
+    let novo;
+    try {
+      novo = await banco.criarUsuario({
+        id: novoId(),
+        nome,
+        chave: chaveLogin(nome),
+        senha: embaralharSenha(senha),
+        papel: 'usuario',
+        email: endereco || null
+      });
+    } catch (falha) {
+      if (falha.code === '23505') return erro(resposta, 409, 'Esse e-mail já está em uso por outro acesso.');
+      throw falha;
+    }
+    if (!novo) return erro(resposta, 409, 'Já existe um acesso com esse nome.');
+    return responderJson(resposta, 201, {
+      usuario: { id: novo.id, nome: novo.nome, papel: novo.papel, email: novo.email, criadoEm: novo.criadoEm }
+    });
+  }
+
   const casaUsuario = rota.match(/^\/api\/usuarios\/([\w-]+)$/);
   if (casaUsuario && (metodo === 'PATCH' || metodo === 'DELETE')) {
     if (!exigeEspremedor()) return;
@@ -1471,6 +1595,16 @@ async function tratarApi(requisicao, resposta, url) {
 
     const corpo = await lerCorpo(requisicao);
     let atualizado = alvo;
+    // O nome é o login: renomear muda como a pessoa entra. A tela avisa isso
+    // antes de mandar. As sessões abertas continuam valendo — o token não
+    // depende do nome.
+    if (corpo.nome !== undefined) {
+      const nome = limparNome(corpo.nome);
+      if (nome.length < 2) return erro(resposta, 400, 'O nome precisa de pelo menos 2 letras.');
+      const renomeado = await banco.renomearUsuario(alvo.id, nome, chaveLogin(nome));
+      if (!renomeado) return erro(resposta, 409, 'Já existe um acesso com esse nome.');
+      atualizado = renomeado;
+    }
     if (corpo.papel === 'espremedor' || corpo.papel === 'usuario') {
       if (corpo.papel === 'usuario' && alvo.papel === 'espremedor' && (await banco.contarEspremedores()) === 1) {
         return erro(resposta, 400, 'Deixe pelo menos uma pessoa como espremedor.');
